@@ -1,0 +1,24 @@
+{
+  "name": "@apexhive-labs/zerofiat-base-checkout-kit",
+  "version": "1.0.0",
+  "description": "Zero-custody Base USDC checkout, Workers KV replay protection, EIP-191 proof, Ed25519 licensing, and Private GitHub Release delivery template for Cloudflare Workers Free.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "dev": "wrangler dev --local --ip 127.0.0.1 --port 4120 --persist-to .wrangler-state",
+    "test:unit": "node --test tests/unit.test.mjs",
+    "test:e2e": "node --test tests/e2e.test.mjs",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "hono": "^4.7.10",
+    "viem": "^2.30.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250501.0",
+    "@types/node": "^22.15.0",
+    "playwright": "1.64.1",
+    "typescript": "^5.8.3"
+  }
+}

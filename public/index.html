@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ZeroFiat Base Checkout Kit (v1.0.0) | ApexHive Labs</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="container nav-row">
+      <div class="brand">
+        <span class="brand-badge">ApexHive Labs</span>
+        <span class="brand-name">zerofiat-base-checkout-kit <small>v1.0.0</small></span>
+      </div>
+      <nav class="nav-links">
+        <a href="#architecture">Architecture</a>
+        <a href="#pricing">Pricing</a>
+        <a href="#checkout">Buy Kit (USDC)</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="hero">
+      <p class="eyebrow">CLOUDFLARE WORKERS FREE &bull; WORKERS KV &bull; ZERO STRIPE / ZERO R2</p>
+      <h1>Sell Software, CLI Licenses &amp; Private Repos for Base USDC at $0/mo.</h1>
+      <p class="subtitle">
+        A production-ready TypeScript template for Cloudflare Workers Free + <strong>Workers KV</strong>. Verify Base USDC transfers via JSON-RPC + EIP-191 ownership signatures, prevent <code>txHash</code> replay, issue offline Ed25519 licenses, and stream Private GitHub Release <code>.zip</code> archives with zero custodial risk.
+      </p>
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="#checkout">Get the Kit (29 USDC)</a>
+        <a class="btn btn-secondary" href="#architecture">Inspect Architecture</a>
+      </div>
+    </section>
+
+    <section id="architecture" class="section">
+      <h2>What Ships Inside the Kit</h2>
+      <div class="grid-3">
+        <article class="card">
+          <h3>Base USDC + EIP-191 Verifier</h3>
+          <p>Exact <code>BigInt</code> 6-decimal ERC-20 <code>Transfer</code> log verification paired with <code>viem.verifyMessage</code> so strangers cannot hijack public transaction hashes.</p>
+        </article>
+        <article class="card">
+          <h3>Workers KV Replay Locks</h3>
+          <p>Single-use 300s challenge nonces, <code>claimed_tx:</code> replay locks, and 600s capped download grants—requiring zero D1 databases or R2 credit cards.</p>
+        </article>
+        <article class="card">
+          <h3>Ed25519 + GH Release Stream</h3>
+          <p>Portable WebCrypto Ed25519 license tokens plus zero-CPU streaming of private GitHub Release <code>.zip</code> bundles, plus full Playwright &amp; mocked-RPC E2E tests.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="pricing" class="section">
+      <h2>One-Time Crypto License (Base USDC)</h2>
+      <div class="grid-2">
+        <article class="card card-featured">
+          <h3>Solo Indie License</h3>
+          <p class="price">29 USDC <span>one-time</span></p>
+          <ul class="feat-list">
+            <li>Full TypeScript source (<code>src/</code> + <code>public/</code> + <code>tests/</code>)</li>
+            <li>Commercial rights for 1 product / storefront</li>
+            <li>Ed25519 offline verifier + Private GH Release proxy</li>
+            <li>Playwright &amp; Workers KV E2E test harness included</li>
+          </ul>
+        </article>
+        <article class="card">
+          <h3>Team Agency License</h3>
+          <p class="price">59 USDC <span>one-time</span></p>
+          <ul class="feat-list">
+            <li>Everything in Solo Indie License</li>
+            <li>Unlimited commercial storefronts &amp; client projects</li>
+            <li>Multi-seat team deployment rights</li>
+            <li>Lifetime updates via private GitHub releases</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section id="checkout" class="section">
+      <h2>Live Non-Custodial Checkout (Base Mainnet)</h2>
+
+      <div id="self-custody-warning" class="warning-banner" role="alert">
+        <strong>SELF-CUSTODY WALLET ONLY:</strong> Send Base USDC <strong>ONLY</strong> from a self-custody wallet you control (MetaMask, Rabby, Coinbase Wallet). <strong>NEVER send directly from a centralized exchange (CEX) withdrawal</strong>—exchange hot wallets cannot sign the EIP-191 ownership challenge required to unlock your download.
+      </div>
+
+      <div class="checkout-grid">
+        <div class="card">
+          <h3>Step 1: Send Base USDC</h3>
+          <div class="field-group">
+            <label for="tier-select">License Tier</label>
+            <select id="tier-select">
+              <option value="solo">Solo Indie — 29 USDC (Base Mainnet)</option>
+              <option value="team">Team Agency — 59 USDC (Base Mainnet)</option>
+            </select>
+          </div>
+          <div class="field-group">
+            <label>Receive Address (Base Mainnet &bull; Chain ID 8453)</label>
+            <div class="copy-row">
+              <code id="pay-to-address">0x32eceaC45DBED9E555dAb80346aBd4Ab9C676206</code>
+              <button type="button" id="copy-address-btn" class="btn btn-small">Copy</button>
+            </div>
+            <small class="muted">USDC Contract: <code id="usdc-contract">0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913</code></small>
+          </div>
+
+          <details class="optional-rails">
+            <summary>Optional Reference Rails (Solana / BTC / TRON — Manual Fulfillment)</summary>
+            <ul>
+              <li>Solana USDC: <code id="sol-address">4UyTxvrcqtYEsm5LQuiD5ofEJ4bMk6XJqv6G4St3GC9F</code></li>
+              <li>Bitcoin SegWit: <code id="btc-address">bc1q2j0yqtn2cyslurxvx050vpgnamdqhxtegfs789</code></li>
+              <li>TRON TRC-20: <code id="tron-address">TFVqcqQuGKsjwb6tFnhLyL3UudPdA6VnnN</code></li>
+            </ul>
+          </details>
+        </div>
+
+        <div class="card">
+          <h3>Step 2: Verify Payment &amp; Download Kit</h3>
+          <form id="verify-form" novalidate>
+            <div class="field-group">
+              <label for="tx-hash-input">Base Transaction Hash (<code>txHash</code>)</label>
+              <input id="tx-hash-input" type="text" placeholder="0x..." autocomplete="off" />
+            </div>
+
+            <div class="btn-row">
+              <button type="button" id="challenge-btn" class="btn btn-secondary">
+                1. Generate EIP-191 Challenge
+              </button>
+              <button type="button" id="wallet-sign-btn" class="btn btn-small" hidden>
+                Sign via Wallet
+              </button>
+            </div>
+
+            <div id="challenge-box" class="challenge-box" hidden>
+              <label for="challenge-text">Challenge Message (expires in 300s)</label>
+              <textarea id="challenge-text" rows="5" readonly></textarea>
+              <small class="muted">Nonce: <code id="challenge-nonce"></code></small>
+            </div>
+
+            <div class="field-group">
+              <label for="signature-input">EIP-191 Signature (<code>personal_sign</code>)</label>
+              <input id="signature-input" type="text" placeholder="0x..." autocomplete="off" />
+            </div>
+
+            <button type="submit" id="verify-btn" class="btn btn-primary btn-full">
+              2. Verify USDC &amp; Unlock Kit
+            </button>
+          </form>
+
+          <div id="status-error" class="error-box" hidden></div>
+
+          <div id="license-result" class="success-box" hidden>
+            <h4>Verified! Kit &amp; License Unlocked</h4>
+            <p>
+              <a id="download-link" class="btn btn-primary" href="#" download>Download Kit Archive (.zip)</a>
+            </p>
+            <details>
+              <summary>Signed Ed25519 License Token</summary>
+              <code id="raw-token" class="token-break"></code>
+            </details>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-row">
+      <span>&copy; 2026 ApexHive Labs &bull; Non-Custodial Base USDC Checkout</span>
+      <span>Zero Stripe &bull; Zero D1/R2 &bull; Workers KV</span>
+    </div>
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+name = "zerofiat-base-checkout-kit"
+main = "src/index.ts"
+compatibility_date = "2025-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+[[kv_namespaces]]
+binding = "LICENSES_KV"
+id = "REPLACE_WITH_KV_NAMESPACE_ID_ON_DEPLOY"
+preview_id = "REPLACE_WITH_KV_PREVIEW_ID_ON_DEPLOY"
+
+[vars]
+BRAND_NAME = "ApexHive Labs"
+PRODUCT_ID = "zerofiat-base-checkout-kit"
+TOKEN_PREFIX = "ZEROFIAT-KIT-v1."
+PAY_TO_EVM_ADDRESS = "0x32eceaC45DBED9E555dAb80346aBd4Ab9C676206"
+BASE_USDC_CONTRACT = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+BASE_CHAIN_ID = "8453"
+BASE_RPC_URL = "https://mainnet.base.org"
+SOLO_PRICE_USDC_ATOMIC = "29000000"
+TEAM_PRICE_USDC_ATOMIC = "59000000"
+MIN_CONFIRMATIONS = "2"
+CHALLENGE_TTL_SECONDS = "300"
+DOWNLOAD_TTL_SECONDS = "600"
+GITHUB_RELEASE_ASSET_URL = "https://api.github.com/repos/apexhive-hq/zerofiat-base-checkout-kit/releases/assets/REPLACE_ASSET_ID"
+RELEASE_FILENAME = "zerofiat-base-checkout-kit-v1.0.0.zip"
+SOLANA_RECEIVE_ADDRESS = "4UyTxvrcqtYEsm5LQuiD5ofEJ4bMk6XJqv6G4St3GC9F"
+BTC_RECEIVE_ADDRESS = "bc1q2j0yqtn2cyslurxvx050vpgnamdqhxtegfs789"
+TRON_RECEIVE_ADDRESS = "TFVqcqQuGKsjwb6tFnhLyL3UudPdA6VnnN"

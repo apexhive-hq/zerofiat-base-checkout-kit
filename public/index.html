@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ZeroFiat Base Checkout Kit (v2.0.0 Open-Core MIT) | ApexHive Labs</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="container nav-row">
+      <div class="brand">
+        <span class="brand-badge">ApexHive Labs</span>
+        <span class="brand-name">zerofiat-base-checkout-kit <small>v2.0.0 MIT</small></span>
+      </div>
+      <nav class="nav-links">
+        <a href="#architecture">Architecture</a>
+        <a href="#pricing">Open-Core Tiers</a>
+        <a href="#quota">Hosted API Quota</a>
+        <a href="#checkout">Team / Sponsor</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="hero">
+      <p class="eyebrow">100% MIT OPEN-SOURCE CORE &bull; HOSTED API FREE UP TO $10K GMV &bull; ZERO STRIPE</p>
+      <h1>Verify Base USDC Payments at $0 Until You Earn $10,000.</h1>
+      <p class="subtitle">
+        <strong>100% Public MIT Open-Source</strong> TypeScript checkout for Cloudflare Workers Free + <strong>Workers KV</strong>. Self-host free forever via <code>git clone</code>, or call our zero-signup <strong>Cloud Hosted Verify API FREE for your first $10,000 USDC verified GMV</strong>.
+      </p>
+      <div class="code-box">
+        <code>git clone https://github.com/apexhive-hq/zerofiat-base-checkout-kit.git &amp;&amp; cd zerofiat-base-checkout-kit &amp;&amp; pnpm install --ignore-scripts &amp;&amp; pnpm test</code>
+      </div>
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="#quota">Check Free $10K Hosted Quota</a>
+        <a class="btn btn-secondary" href="#checkout">Team Pro (49 USDC) / Sponsor (5 USDC)</a>
+      </div>
+    </section>
+
+    <section id="architecture" class="section">
+      <h2>What Ships Inside the MIT Core</h2>
+      <div class="grid-3">
+        <article class="card">
+          <h3>Base USDC + EIP-191 Verifier</h3>
+          <p>Exact <code>BigInt</code> 6-decimal ERC-20 <code>Transfer</code> log verification paired with multi-RPC Base failover (<code>BASE_RPC_URLS</code>) and optional <code>viem.verifyMessage</code> proofs.</p>
+        </article>
+        <article class="card">
+          <h3>Hosted Verify API ($10K Free)</h3>
+          <p>Point your frontend or backend at <code>POST /api/hosted/verify</code> with your own <code>merchantAddress</code>—anti-replay locked, free until <code>$10,000 USDC</code> cumulative GMV.</p>
+        </article>
+        <article class="card">
+          <h3>Ed25519 + MIT Entitlements</h3>
+          <p>Portable WebCrypto Ed25519 license tokens, HMAC-signed download grants, same-payer re-claim recovery, and full Playwright E2E tests.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="pricing" class="section">
+      <h2>Open-Core Pricing</h2>
+      <div class="grid-2">
+        <article class="card">
+          <h3>Open-Source Self-Host (MIT)</h3>
+          <p class="price">0 USDC <span>MIT forever</span></p>
+          <ul class="feat-list">
+            <li>Full TypeScript source (<code>src/</code> + <code>public/</code> + <code>tests/</code>)</li>
+            <li>Deploy free on Cloudflare Workers Free + Workers KV</li>
+            <li>Unlimited GMV on your own Worker deployment</li>
+            <li>Self-host any MIT release without license keys</li>
+          </ul>
+        </article>
+        <article class="card card-featured">
+          <h3>Cloud Hosted Verify API</h3>
+          <p class="price">0 USDC <span>up to $10,000 GMV</span></p>
+          <ul class="feat-list">
+            <li>Zero signup—just pass your Base <code>merchantAddress</code></li>
+            <li><code>POST /api/hosted/verify</code> &amp; <code>GET /api/hosted/quota/:addr</code></li>
+            <li>Idempotent replay cache (zero double-counted GMV)</li>
+            <li>Multi-RPC failover + instant settlement to your wallet</li>
+          </ul>
+        </article>
+        <article class="card">
+          <h3>Sponsor / Supporter</h3>
+          <p class="price">5 USDC <span>optional</span></p>
+          <ul class="feat-list">
+            <li>Voluntary backing for MIT open-source maintenance</li>
+            <li>1-click Base USDC wallet checkout below</li>
+            <li>Signed Ed25519 supporter token + MIT certificate</li>
+            <li>Support contact: <code>apexhive.hq@proton.me</code></li>
+          </ul>
+        </article>
+        <article class="card">
+          <h3>Team / Hosted Pro</h3>
+          <p class="price">49 USDC <span>lifetime</span></p>
+          <ul class="feat-list">
+            <li>Unlimited Cloud Hosted API GMV beyond <code>$10,000</code></li>
+            <li>Pass signed token via <code>X-ApexHive-License</code> header</li>
+            <li>5-seat commercial agency license &amp; priority support</li>
+            <li>Same-wallet re-claim recovery if browser tab closes</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section id="quota" class="section">
+      <h2>Live Cloud Hosted API Quota Checker</h2>
+      <div class="card">
+        <p class="muted">Inspect cumulative verified Base USDC GMV and remaining free <code>$10,000 USDC</code> Hosted API quota for any EVM <code>merchantAddress</code> (0 KV writes).</p>
+        <div class="copy-row">
+          <input id="quota-address-input" type="text" placeholder="0xYourMerchantAddress" autocomplete="off" />
+          <button type="button" id="check-quota-btn" class="btn btn-secondary">Check Quota</button>
+        </div>
+        <div id="quota-result" class="success-box" hidden></div>
+      </div>
+    </section>
+
+    <section id="checkout" class="section">
+      <h2>Team / Sponsor Base USDC Checkout</h2>
+
+      <div id="self-custody-warning" class="warning-banner" role="alert">
+        <strong>SELF-CUSTODY WALLET ONLY:</strong> Send Base USDC <strong>ONLY</strong> from a self-custody wallet you control (MetaMask, Rabby, Coinbase Wallet). <strong>NEVER send directly from a centralized exchange (CEX) withdrawal</strong>—exchange hot wallets cannot sign the EIP-191 ownership challenge required below. Same-wallet re-claims stay enabled; for manual support contact <a href="mailto:apexhive.hq@proton.me">apexhive.hq@proton.me</a>.
+      </div>
+
+      <div class="checkout-grid">
+        <div class="card">
+          <h3>Step 1: Send Base USDC</h3>
+          <div class="field-group">
+            <label for="tier-select">Checkout Tier</label>
+            <select id="tier-select">
+              <option value="supporter">Sponsor / Supporter — 5 USDC (Optional)</option>
+              <option value="team">Team / Hosted Pro — 49 USDC (Unlimited Hosted API + 5 Seats)</option>
+            </select>
+          </div>
+          <div class="field-group">
+            <label>Receive Address (Base Mainnet &bull; Chain ID 8453)</label>
+            <div class="copy-row">
+              <code id="pay-to-address">0x32eceaC45DBED9E555dAb80346aBd4Ab9C676206</code>
+              <button type="button" id="copy-address-btn" class="btn btn-small">Copy</button>
+            </div>
+            <small class="muted">USDC Contract: <code id="usdc-contract">0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913</code></small>
+          </div>
+
+          <div class="field-group">
+            <button type="button" id="wallet-pay-btn" class="btn btn-primary btn-full" hidden>Pay 5 USDC with Wallet</button>
+            <small id="wallet-pay-status" class="muted" role="status"></small>
+          </div>
+
+          <details class="optional-rails">
+            <summary>Optional Reference Rails (Solana / BTC / TRON — Manual Fulfillment via apexhive.hq@proton.me)</summary>
+            <ul>
+              <li>Solana USDC: <code id="sol-address">4UyTxvrcqtYEsm5LQuiD5ofEJ4bMk6XJqv6G4St3GC9F</code></li>
+              <li>Bitcoin SegWit: <code id="btc-address">bc1q2j0yqtn2cyslurxvx050vpgnamdqhxtegfs789</code></li>
+              <li>TRON TRC-20: <code id="tron-address">TFVqcqQuGKsjwb6tFnhLyL3UudPdA6VnnN</code></li>
+            </ul>
+          </details>
+        </div>
+
+        <div class="card">
+          <h3>Step 2: Prove Wallet &amp; Claim License</h3>
+          <form id="verify-form" novalidate>
+            <div class="field-group">
+              <label for="tx-hash-input">Base Transaction Hash (<code>txHash</code>)</label>
+              <input id="tx-hash-input" type="text" placeholder="0x..." autocomplete="off" />
+            </div>
+
+            <div class="btn-row">
+              <button type="button" id="challenge-btn" class="btn btn-secondary">
+                1. Generate EIP-191 Challenge
+              </button>
+              <button type="button" id="wallet-sign-btn" class="btn btn-small" hidden>
+                Sign via Wallet
+              </button>
+            </div>
+
+            <div id="challenge-box" class="challenge-box" hidden>
+              <label for="challenge-text">Challenge Message (expires in 300s)</label>
+              <textarea id="challenge-text" rows="5" readonly></textarea>
+              <small class="muted">Nonce: <code id="challenge-nonce"></code></small>
+            </div>
+
+            <div class="field-group">
+              <label for="signature-input">EIP-191 Signature (<code>personal_sign</code>)</label>
+              <input id="signature-input" type="text" placeholder="0x..." autocomplete="off" />
+            </div>
+
+            <button type="submit" id="verify-btn" class="btn btn-primary btn-full">
+              2. Verify USDC &amp; Issue License
+            </button>
+          </form>
+
+          <div id="status-error" class="error-box" hidden></div>
+
+          <div id="license-result" class="success-box" hidden>
+            <h4>Verified! License &amp; Archive Unlocked</h4>
+            <p>
+              <a id="download-link" class="btn btn-primary" href="#" download>Download Archive / Certificate</a>
+            </p>
+            <details>
+              <summary>Signed Ed25519 License Token</summary>
+              <code id="raw-token" class="token-break"></code>
+            </details>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-row">
+      <span>&copy; 2026 ApexHive Labs &bull; MIT Open Source &bull; Support: <a href="mailto:apexhive.hq@proton.me">apexhive.hq@proton.me</a></span>
+      <span>Zero Stripe &bull; Free Until $10K Hosted GMV &bull; Workers KV</span>
+    </div>
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>

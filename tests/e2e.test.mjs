@@ -3,19 +3,16 @@ import { execSync, spawn } from 'node:child_process';
 import { createHash, generateKeyPairSync } from 'node:crypto';
 import { existsSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import test from 'node:test';
 import { encodeAbiParameters, pad } from 'viem';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import { verifyLicenseTokenOffline } from '../src/offline-verify.ts';
 
 const KIT_DIR = process.cwd();
-const HQ_ROOT = resolve(KIT_DIR, '..', '..');
-const CACHES_DIR = existsSync(join(HQ_ROOT, 'departments', 'infra', '.caches'))
-  ? join(HQ_ROOT, 'departments', 'infra', '.caches')
-  : join(HQ_ROOT, '.caches');
+const HOSTED_TOKEN = 'hosted-e2e-secret-token-0123456789abcdef';
 
-const PAY_TO = '0x32eceaC45DBED9E555dAb80346aBd4Ab9C676206';
+const PAY_TO = '0x1111111111111111111111111111111111111111';
 const BASE_USDC = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
 const WRONG_USDC = '0x9999999999999999999999999999999999999999';
 const WRONG_RECIPIENT = '0x8888888888888888888888888888888888888888';
@@ -259,6 +256,8 @@ test('zerofiat-base-checkout-kit v2.1 Free MIT + ERC-1271 Smart Wallet + Durable
   writeFileSync(
     devVarsPath,
     [
+      `PAY_TO_EVM_ADDRESS=${PAY_TO}`,
+      `HOSTED_API_TOKEN=${HOSTED_TOKEN}`,
       `LICENSE_SIGNING_PRIVATE_JWK=${JSON.stringify(privateJwk)}`,
       `LICENSE_SIGNING_PUBLIC_SPKI_B64=${publicSpkiB64}`,
       `DOWNLOAD_HMAC_SECRET=abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789`,
@@ -271,15 +270,14 @@ test('zerofiat-base-checkout-kit v2.1 Free MIT + ERC-1271 Smart Wallet + Durable
   );
 
   const wranglerLaunch = resolveWranglerLaunch();
-  const useSandboxCaches = existsSync(CACHES_DIR);
   const wranglerEnv = {
     ...process.env,
     WRANGLER_SEND_METRICS: 'false'
   };
-  if (useSandboxCaches) {
-    wranglerEnv.APPDATA = join(CACHES_DIR, 'roaming');
-    wranglerEnv.LOCALAPPDATA = join(CACHES_DIR, 'local');
-    wranglerEnv.XDG_CONFIG_HOME = join(CACHES_DIR, 'xdg');
+  if (process.env.WRANGLER_CACHE_DIR) {
+    wranglerEnv.APPDATA = join(process.env.WRANGLER_CACHE_DIR, 'roaming');
+    wranglerEnv.LOCALAPPDATA = join(process.env.WRANGLER_CACHE_DIR, 'local');
+    wranglerEnv.XDG_CONFIG_HOME = join(process.env.WRANGLER_CACHE_DIR, 'xdg');
   }
 
   const wranglerProc = spawn(
@@ -317,8 +315,14 @@ test('zerofiat-base-checkout-kit v2.1 Free MIT + ERC-1271 Smart Wallet + Durable
       throw new Error(`${err.message}\nWrangler logs:\n${wranglerLogs.join('')}`);
     }
 
-    // 4. Health & Config checks (Durable Object bound, unlimited Free MIT, Smart Wallet support)
-    const healthJson = await (await fetch(`${baseUrl}/api/health`)).json();
+    // 4. Health, Config & Strict Security Header checks
+    const healthRes = await fetch(`${baseUrl}/api/health`);
+    assert.equal(healthRes.headers.get('x-frame-options'), 'DENY');
+    assert.equal(healthRes.headers.get('x-content-type-options'), 'nosniff');
+    assert.equal(healthRes.headers.get('referrer-policy'), 'no-referrer');
+    assert.ok(healthRes.headers.get('content-security-policy')?.includes("frame-ancestors 'none'"));
+
+    const healthJson = await healthRes.json();
     assert.equal(healthJson.durableObjectLockBound, true);
     assert.equal(healthJson.unlimitedFreeMit, true);
     assert.deepEqual(healthJson.smartWalletSupport, ['EOA', 'ERC-1271', 'EIP-6492']);
@@ -328,6 +332,18 @@ test('zerofiat-base-checkout-kit v2.1 Free MIT + ERC-1271 Smart Wallet + Durable
     assert.equal(cfgJson.unlimitedFreeMit, true);
     assert.equal(cfgJson.supportEmail, 'apexhive.hq@proton.me');
     assert.equal(cfgJson.checkoutDemo.atomic, '1000000');
+
+    // Cross-origin disallowed POST rejected by CORS / ALLOWED_ORIGINS policy
+    const crossOriginPost = await fetch(`${baseUrl}/api/challenge`, {
+      method: 'POST',
+      headers: {
+        Origin: 'https://evil.example',
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({ txHash: TX_STANDARD, tier: 'standard' })
+    });
+    assert.equal(crossOriginPost.status, 403);
+    assert.equal(crossOriginPost.headers.get('access-control-allow-origin'), null);
 
     async function issueChallenge(txHash, tier = 'standard') {
       const res = await fetch(`${baseUrl}/api/challenge`, {
@@ -403,11 +419,28 @@ test('zerofiat-base-checkout-kit v2.1 Free MIT + ERC-1271 Smart Wallet + Durable
     assert.equal(smartOkJson.payer, smartWalletAddr);
 
     // 4c. Real Durable Object TxClaimLockDO atomic race test (5 parallel /api/hosted/verify requests)
+    //     Unauthenticated consumeOnce: true blocked (403 HOSTED_AUTH_REQUIRED)
+    const griefBlocked = await fetch(`${baseUrl}/api/hosted/verify`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        txHash: TX_HOSTED_6K,
+        merchantAddress: merchantAcct.address,
+        minAmountAtomic: '6000000000'
+      })
+    });
+    assert.equal(griefBlocked.status, 403);
+    assert.equal((await griefBlocked.json()).error, 'HOSTED_AUTH_REQUIRED');
+
+    //     Strict single-use default with HOSTED_API_TOKEN: 1 x 200 consumed, 4 x 409 TX_ALREADY_CLAIMED, GMV counted once
     const concurrentHosted = await Promise.all(
       Array.from({ length: 5 }, () =>
         fetch(`${baseUrl}/api/hosted/verify`, {
           method: 'POST',
-          headers: { 'content-type': 'application/json' },
+          headers: {
+            'content-type': 'application/json',
+            Authorization: `Bearer ${HOSTED_TOKEN}`
+          },
           body: JSON.stringify({
             txHash: TX_HOSTED_6K,
             merchantAddress: merchantAcct.address,
@@ -417,25 +450,55 @@ test('zerofiat-base-checkout-kit v2.1 Free MIT + ERC-1271 Smart Wallet + Durable
       )
     );
     const concurrentBodies = await Promise.all(concurrentHosted.map((r) => r.json()));
-    for (const r of concurrentHosted) assert.equal(r.status, 200);
-    assert.equal(concurrentBodies.filter((b) => b.cached === false).length, 1);
-    assert.equal(concurrentBodies.filter((b) => b.cached === true).length, 4);
+    assert.equal(concurrentHosted.filter((r) => r.status === 200).length, 1);
+    assert.equal(concurrentHosted.filter((r) => r.status === 409).length, 4);
+    assert.equal(concurrentBodies.filter((b) => b.ok === true && b.cached === false && b.consumed === true).length, 1);
+    assert.equal(concurrentBodies.filter((b) => b.ok === false && b.error === 'TX_ALREADY_CLAIMED').length, 4);
+
+    // Explicit consumeOnce: false returns cached=true without re-counting GMV
+    const hostedCached = await fetch(`${baseUrl}/api/hosted/verify`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        txHash: TX_HOSTED_6K,
+        merchantAddress: merchantAcct.address,
+        minAmountAtomic: '6000000000',
+        consumeOnce: false
+      })
+    });
+    assert.equal(hostedCached.status, 200);
+    assert.equal((await hostedCached.json()).cached, true);
 
     const quota1 = await (await fetch(`${baseUrl}/api/hosted/quota/${merchantAcct.address}`)).json();
     assert.equal(quota1.gmvAtomic, '6000000000');
 
-    // Different merchant claiming TX_HOSTED_6K -> 403 TX_ALREADY_CLAIMED
+    // Different merchant claiming TX_HOSTED_6K -> 403 PAYMENT_NOT_FOUND
     const h6kCross = await fetch(`${baseUrl}/api/hosted/verify`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        Authorization: `Bearer ${HOSTED_TOKEN}`
+      },
       body: JSON.stringify({ txHash: TX_HOSTED_6K, merchantAddress: otherMerchantAcct.address })
     });
     assert.equal(h6kCross.status, 403);
 
-    // Unlimited GMV past $10,000 ($6k + $6k = $12k) -> 200 OK (no paywall!)
-    const h6kTwo = await fetch(`${baseUrl}/api/hosted/verify`, {
+    // Unauthenticated /api/hosted/verify targeting host PAY_TO_EVM_ADDRESS is blocked (403)
+    const hHostUnauth = await fetch(`${baseUrl}/api/hosted/verify`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ txHash: TX_STANDARD, merchantAddress: PAY_TO, minAmountAtomic: '1000000' })
+    });
+    assert.equal(hHostUnauth.status, 403);
+    assert.equal((await hHostUnauth.json()).error, 'HOST_MERCHANT_SIGNATURE_REQUIRED');
+
+    // Unlimited GMV accumulation in atomic DO state -> 200 OK
+    const h6kTwo = await fetch(`${baseUrl}/api/hosted/verify`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        Authorization: `Bearer ${HOSTED_TOKEN}`
+      },
       body: JSON.stringify({ txHash: TX_HOSTED_6K_TWO, merchantAddress: merchantAcct.address })
     });
     assert.equal(h6kTwo.status, 200);
@@ -454,14 +517,18 @@ test('zerofiat-base-checkout-kit v2.1 Free MIT + ERC-1271 Smart Wallet + Durable
     assert.equal(vStd.status, 200);
     const stdJson = await vStd.json();
 
-    for (let i = 0; i < 3; i += 1) {
-      const dl = await fetch(`${baseUrl}${stdJson.downloadUrl}`);
-      assert.equal(dl.status, 200);
-      const buf = Buffer.from(await dl.arrayBuffer());
-      assert.equal(createHash('sha256').update(buf).digest('hex'), expectedZipSha256);
+    // Concurrent 5x GET /api/download on 3-download DO grant -> strictly 3 x 200, 2 x 403
+    const dlBatch = await Promise.all(
+      Array.from({ length: 5 }, () => fetch(`${baseUrl}${stdJson.downloadUrl}`))
+    );
+    assert.equal(dlBatch.filter((r) => r.status === 200).length, 3);
+    assert.equal(dlBatch.filter((r) => r.status === 403).length, 2);
+    for (const r of dlBatch) {
+      if (r.status === 200) {
+        const buf = Buffer.from(await r.arrayBuffer());
+        assert.equal(createHash('sha256').update(buf).digest('hex'), expectedZipSha256);
+      }
     }
-    const dl4 = await fetch(`${baseUrl}${stdJson.downloadUrl}`);
-    assert.equal(dl4.status, 403);
 
     const chReclaim = await issueChallenge(TX_STANDARD);
     const sigReclaim = await payerAcct.signMessage({ message: chReclaim.message });
@@ -501,12 +568,7 @@ test('zerofiat-base-checkout-kit v2.1 Free MIT + ERC-1271 Smart Wallet + Durable
       assert.equal(vNeg.status, 403);
     }
 
-    // 5. Playwright Headless UI verification (resolve sandboxed cache before dynamic import)
-    const cachedPlaywrightDir = join(CACHES_DIR, 'ms-playwright');
-    if (!process.env.PLAYWRIGHT_BROWSERS_PATH && existsSync(cachedPlaywrightDir)) {
-      process.env.PLAYWRIGHT_BROWSERS_PATH = cachedPlaywrightDir;
-    }
-
+    // 5. Playwright Headless UI verification
     const { chromium } = await import('playwright');
     const browser = await chromium.launch({ headless: true });
     try {
@@ -558,8 +620,8 @@ test('zerofiat-base-checkout-kit v2.1 Free MIT + ERC-1271 Smart Wallet + Durable
         assert.ok(bodyText.includes('MIT'));
         assert.ok(bodyText.includes('ERC-1271'));
         assert.ok(bodyText.includes('Durable Object'));
-        assert.equal(bodyText.includes('Hosted Pro'), false);
-        assert.equal(bodyText.includes('49 USDC'), false);
+        assert.equal(bodyText.includes('$10k'), false);
+        assert.equal(bodyText.includes('gmvAtomic: "0"'), false);
 
         const overflow = await page.evaluate(
           () => document.documentElement.scrollWidth > window.innerWidth

@@ -7,10 +7,6 @@ compatibility_flags = ["nodejs_compat"]
 directory = "./public"
 binding = "ASSETS"
 
-[[kv_namespaces]]
-binding = "LICENSES_KV"
-id = "d6e0c47cb0894819b3667e5c462718b2"
-
 [[durable_objects.bindings]]
 name = "TX_CLAIM_LOCK"
 class_name = "TxClaimLockDO"
@@ -23,8 +19,10 @@ new_sqlite_classes = ["TxClaimLockDO"]
 BRAND_NAME = "ApexHive Labs"
 PRODUCT_ID = "zerofiat-base-checkout-kit"
 TOKEN_PREFIX = "ZEROFIAT-KIT-v1."
-LICENSE_SIGNING_PUBLIC_SPKI_B64 = "MCowBQYDK2VwAyEAD3M+grB9svVRB5LgtUvV7XJ6YBByJgpheOEv1CXcbU0="
-PAY_TO_EVM_ADDRESS = "0x32eceaC45DBED9E555dAb80346aBd4Ab9C676206"
+# Generate your Ed25519 keypair via `node scripts/gen-dev-keys.mjs` and replace this public SPKI:
+LICENSE_SIGNING_PUBLIC_SPKI_B64 = "REPLACE_WITH_YOUR_PUBLIC_SPKI_B64"
+# Required: replace with your own Base Mainnet receive address (0x-prefixed 40-hex EVM address)
+PAY_TO_EVM_ADDRESS = "REPLACE_WITH_YOUR_EVM_ADDRESS"
 BASE_USDC_CONTRACT = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
 BASE_CHAIN_ID = "8453"
 BASE_RPC_URL = "https://mainnet.base.org"
@@ -33,5 +31,7 @@ CHECKOUT_AMOUNT_USDC_ATOMIC = "1000000"
 MIN_CONFIRMATIONS = "2"
 CHALLENGE_TTL_SECONDS = "300"
 DOWNLOAD_TTL_SECONDS = "600"
+# Comma-separated cross-origin allowlist (empty = same-origin only)
+ALLOWED_ORIGINS = ""
 PUBLIC_ARCHIVE_URL = "https://github.com/apexhive-hq/zerofiat-base-checkout-kit/archive/refs/heads/main.zip"
 RELEASE_FILENAME = "zerofiat-base-checkout-kit.zip"

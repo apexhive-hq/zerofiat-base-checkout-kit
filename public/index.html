@@ -64,7 +64,7 @@
           <p class="price">0 USDC <span>100% Free MIT</span></p>
           <ul class="feat-list">
             <li>Full TypeScript source (<code>src/</code> + <code>public/</code> + <code>tests/</code>)</li>
-            <li>Runs on Cloudflare Workers Free (SQLite-backed Durable Objects + KV)</li>
+            <li>Runs on Cloudflare Workers Free (SQLite-backed Durable Objects)</li>
             <li>Unlimited verified Base USDC GMV with zero usage caps</li>
             <li>Zero spend-key custody: read-only RPC + public receive address</li>
           </ul>
@@ -98,7 +98,7 @@
       <h2>Base USDC + Smart Wallet Verification Demo</h2>
 
       <div id="self-custody-warning" class="warning-banner" role="alert">
-        <strong>SELF-CUSTODY OR SMART WALLET ONLY:</strong> Send Base USDC from an EOA (MetaMask, Rabby) or Base Smart Wallet (Coinbase Smart Wallet, Safe — <code>ERC-1271</code> / <code>EIP-6492</code> supported). <strong>NEVER send directly from a centralized exchange (CEX) withdrawal</strong>—exchange hot wallets cannot sign ownership challenges. Contact: <a href="mailto:apexhive.hq@proton.me">apexhive.hq@proton.me</a>.
+        <strong>SELF-CUSTODY OR SMART WALLET ONLY:</strong> Send Base USDC from an EOA (MetaMask, Rabby) or Base Smart Wallet (Coinbase Smart Wallet, Safe — <code>ERC-1271</code> / <code>EIP-6492</code> supported). <strong>NEVER send directly from a centralized exchange (CEX) withdrawal</strong> — exchange hot wallets cannot sign ownership challenges. Contact: <a href="mailto:apexhive.hq@proton.me">apexhive.hq@proton.me</a>.
       </div>
 
       <div class="checkout-grid">
@@ -113,8 +113,8 @@
           <div class="field-group">
             <label>Receive Address (Base Mainnet &bull; Chain ID 8453)</label>
             <div class="copy-row">
-              <code id="pay-to-address">0x32eceaC45DBED9E555dAb80346aBd4Ab9C676206</code>
-              <button type="button" id="copy-address-btn" class="btn btn-small">Copy</button>
+              <code id="pay-to-address">Not configured (set PAY_TO_EVM_ADDRESS)</code>
+              <button type="button" id="copy-address-btn" class="btn btn-small" disabled>Copy</button>
             </div>
             <small class="muted">USDC Contract: <code id="usdc-contract">0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913</code></small>
           </div>

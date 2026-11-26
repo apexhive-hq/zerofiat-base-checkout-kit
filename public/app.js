@@ -24,6 +24,7 @@
 
   let activeNonce = '';
   let checkoutDemo = { usdc: '1', atomic: '1000000' };
+  let payToConfigured = false;
 
   function updateWalletPayLabel() {
     if (!walletPayBtn) return;
@@ -32,7 +33,7 @@
 
   function revealWalletButtonsIfInjected() {
     if (typeof window.ethereum !== 'undefined') {
-      if (walletPayBtn) {
+      if (walletPayBtn && payToConfigured) {
         updateWalletPayLabel();
         walletPayBtn.hidden = false;
       }
@@ -69,7 +70,17 @@
       const res = await fetch('/api/config');
       if (!res.ok) return;
       const cfg = await res.json();
-      if (cfg.payToAddress) payToEl.textContent = cfg.payToAddress;
+      if (cfg.payToAddress && /^0x[0-9a-fA-F]{40}$/.test(cfg.payToAddress)) {
+        payToEl.textContent = cfg.payToAddress;
+        payToConfigured = true;
+        if (copyBtn) copyBtn.disabled = false;
+        revealWalletButtonsIfInjected();
+      } else {
+        payToEl.textContent = 'Not configured — set PAY_TO_EVM_ADDRESS';
+        payToConfigured = false;
+        if (copyBtn) copyBtn.disabled = true;
+        if (walletPayBtn) walletPayBtn.hidden = true;
+      }
       if (cfg.usdcContract) usdcEl.textContent = cfg.usdcContract;
       if (cfg.checkoutDemo) {
         checkoutDemo = cfg.checkoutDemo;

@@ -36,23 +36,51 @@ export type BaseVerifyResult =
       message: string;
     };
 
+export class RpcUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'RpcUnavailableError';
+  }
+}
+
+class ContractRevertError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ContractRevertError';
+  }
+}
+
 function normalizeTopicAddress(topic: string): string {
   return `0x${topic.slice(-40).toLowerCase()}`;
 }
 
 async function rpcCallSingle<T>(rpcUrl: string, method: string, params: unknown[]): Promise<T> {
-  const res = await fetch(rpcUrl, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
-    signal: AbortSignal.timeout(6000)
-  });
-  if (!res.ok) {
-    throw new Error(`RPC HTTP ${res.status}`);
+  let res: Response;
+  try {
+    res = await fetch(rpcUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+      signal: AbortSignal.timeout(6000)
+    });
+  } catch (err) {
+    throw new RpcUnavailableError(err instanceof Error ? err.message : 'RPC fetch failed');
   }
-  const json = (await res.json()) as { result?: T; error?: { message?: string } };
+  if (!res.ok) {
+    throw new RpcUnavailableError(`RPC HTTP ${res.status}`);
+  }
+  let json: { result?: T; error?: { code?: number; message?: string } };
+  try {
+    json = (await res.json()) as { result?: T; error?: { code?: number; message?: string } };
+  } catch (err) {
+    throw new RpcUnavailableError(err instanceof Error ? err.message : 'Malformed RPC JSON');
+  }
   if (json.error) {
-    throw new Error(`RPC error: ${json.error.message ?? 'unknown'}`);
+    const msg = json.error.message ?? 'unknown';
+    if (json.error.code === 3 || /revert/i.test(msg)) {
+      throw new ContractRevertError(`RPC execution reverted: ${msg}`);
+    }
+    throw new RpcUnavailableError(`RPC error: ${msg}`);
   }
   return json.result as T;
 }
@@ -67,10 +95,13 @@ async function rpcCallWithFailover<T>(
     try {
       return await rpcCallSingle<T>(url, method, params);
     } catch (err) {
+      if (err instanceof ContractRevertError) {
+        throw err;
+      }
       lastError = err;
     }
   }
-  throw new Error(
+  throw new RpcUnavailableError(
     `All Base RPC endpoints failed: ${lastError instanceof Error ? lastError.message : 'unknown'}`
   );
 }
@@ -78,6 +109,7 @@ async function rpcCallWithFailover<T>(
 /**
  * Verifies EOA (EIP-191) AND Smart Contract Wallet (ERC-1271 / EIP-6492) signatures
  * via viem publicClient.verifyMessage backed by multi-RPC Base failover transport.
+ * Throws RpcUnavailableError if eth_call transport fails across all RPC endpoints.
  */
 export async function verifySmartWalletOrEoaSignature(input: {
   rpcUrls: string[];
@@ -85,26 +117,49 @@ export async function verifySmartWalletOrEoaSignature(input: {
   message: string;
   signature: string;
 }): Promise<boolean> {
+  let transportErr: RpcUnavailableError | null = null;
   const client = createPublicClient({
     chain: base,
     transport: custom({
       async request({ method, params }) {
-        return rpcCallWithFailover(
-          input.rpcUrls,
-          method,
-          Array.isArray(params) ? params : []
-        );
+        try {
+          return await rpcCallWithFailover(
+            input.rpcUrls,
+            method,
+            Array.isArray(params) ? params : []
+          );
+        } catch (err) {
+          if (err instanceof RpcUnavailableError) {
+            transportErr = err;
+          }
+          throw err;
+        }
       }
     })
   });
 
-  return client
-    .verifyMessage({
+  let result: boolean;
+  try {
+    result = await client.verifyMessage({
       address: input.address as `0x${string}`,
       message: input.message,
       signature: input.signature as `0x${string}`
-    })
-    .catch(() => false);
+    });
+  } catch (err) {
+    if (transportErr) {
+      throw transportErr;
+    }
+    if (err instanceof RpcUnavailableError) {
+      throw err;
+    }
+    return false;
+  }
+  // viem's verifyErc6492 wraps transport errors into CallExecutionError -> VerificationError -> false;
+  // surface any captured RPC transport failure so callers return 502 and preserve challenge nonces.
+  if (!result && transportErr) {
+    throw transportErr;
+  }
+  return result;
 }
 
 /**
@@ -168,20 +223,40 @@ export async function verifyBaseUsdcTransfer(input: {
       message: 'Malformed or non-hex block number returned by Base RPC.'
     };
   }
-  const confirmations = headBlock >= txBlock ? Number(headBlock - txBlock) + 1 : 0;
-  if (confirmations < input.minConfirmations) {
+  const minConfs =
+    Number.isSafeInteger(input.minConfirmations) && input.minConfirmations >= 1
+      ? input.minConfirmations
+      : 2;
+  const confirmationsBig = headBlock >= txBlock ? headBlock - txBlock + 1n : 0n;
+  const confirmations =
+    confirmationsBig > BigInt(Number.MAX_SAFE_INTEGER)
+      ? Number.MAX_SAFE_INTEGER
+      : Number(confirmationsBig);
+  if (confirmations < minConfs) {
     return {
       ok: false,
       status: 403,
       error: 'INSUFFICIENT_CONFIRMATIONS',
-      message: `Need at least ${input.minConfirmations} confirmations (got ${confirmations}).`
+      message: `Need at least ${minConfs} confirmations (got ${confirmations}).`
     };
   }
 
   const expectedUsdc = input.expectedUsdcContract.toLowerCase();
   const expectedPayTo = input.expectedPayTo.toLowerCase();
+  if (!/^0x[0-9a-f]{40}$/.test(expectedUsdc) || !/^0x[0-9a-f]{40}$/.test(expectedPayTo)) {
+    return {
+      ok: false,
+      status: 403,
+      error: 'PAYMENT_NOT_FOUND',
+      message: 'Invalid USDC contract or payTo address configuration.'
+    };
+  }
 
   const payerTotals = new Map<string, bigint>();
+  let recipientTotal = 0n;
+  let topPayer = '';
+  let topPayerAmount = 0n;
+
   for (const log of receipt.logs ?? []) {
     if (log.address?.toLowerCase() !== expectedUsdc) continue;
     if (!log.topics || log.topics.length < 3) continue;
@@ -192,28 +267,56 @@ export async function verifyBaseUsdcTransfer(input: {
     if (to !== expectedPayTo) continue;
 
     const value = parseStrictHexBigInt(log.data);
-    if (value === null) continue;
-    payerTotals.set(from, (payerTotals.get(from) ?? 0n) + value);
+    if (value === null || value <= 0n) continue;
+    const nextFromTotal = (payerTotals.get(from) ?? 0n) + value;
+    payerTotals.set(from, nextFromTotal);
+    recipientTotal += value;
+    if (nextFromTotal > topPayerAmount) {
+      topPayerAmount = nextFromTotal;
+      topPayer = from;
+    }
   }
 
   const requireSig = input.requireSignature !== false;
-  for (const [fromAddr, paid] of payerTotals.entries()) {
-    if (paid < input.requiredAtomicAmount) continue;
-    if (!requireSig) {
+  if (!requireSig) {
+    if (recipientTotal >= input.requiredAtomicAmount && topPayer) {
       return {
         ok: true,
-        payer: fromAddr,
+        payer: topPayer,
         confirmations,
-        paidAtomic: paid.toString()
+        paidAtomic: recipientTotal.toString()
       };
     }
+    return {
+      ok: false,
+      status: 403,
+      error: 'PAYMENT_NOT_FOUND',
+      message: 'No Base USDC Transfer to the target merchant address met the required amount.'
+    };
+  }
+
+  for (const [fromAddr, paid] of payerTotals.entries()) {
+    if (paid < input.requiredAtomicAmount) continue;
     if (!input.challengeMessage || !input.signature) continue;
-    const sigOk = await verifySmartWalletOrEoaSignature({
-      rpcUrls: urls,
-      address: fromAddr,
-      message: input.challengeMessage,
-      signature: input.signature
-    });
+    let sigOk: boolean;
+    try {
+      sigOk = await verifySmartWalletOrEoaSignature({
+        rpcUrls: urls,
+        address: fromAddr,
+        message: input.challengeMessage,
+        signature: input.signature
+      });
+    } catch (err) {
+      if (err instanceof RpcUnavailableError) {
+        return {
+          ok: false,
+          status: 502,
+          error: 'RPC_UNAVAILABLE',
+          message: err.message
+        };
+      }
+      throw err;
+    }
 
     if (sigOk) {
       return {
@@ -228,9 +331,8 @@ export async function verifyBaseUsdcTransfer(input: {
   return {
     ok: false,
     status: 403,
-    error: requireSig ? 'PAYMENT_OR_SIGNATURE_INVALID' : 'PAYMENT_NOT_FOUND',
-    message: requireSig
-      ? 'No Base USDC Transfer to the configured receive address met the required amount with a matching EOA or Smart Wallet (ERC-1271/EIP-6492) signature.'
-      : 'No Base USDC Transfer to the target merchant address met the required amount.'
+    error: 'PAYMENT_OR_SIGNATURE_INVALID',
+    message:
+      'No Base USDC Transfer to the configured receive address met the required amount with a matching EOA or Smart Wallet (ERC-1271/EIP-6492) signature.'
   };
 }

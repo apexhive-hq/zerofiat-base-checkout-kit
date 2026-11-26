@@ -1,10 +1,9 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { verifyMessage } from 'viem';
-import { verifyBaseUsdcTransfer } from './base-verifier.ts';
+import { verifyBaseUsdcTransfer, verifySmartWalletOrEoaSignature } from './base-verifier.ts';
 import { streamReleaseOrPublicCertificate } from './github-release.ts';
 import { signEd25519License } from './license-signer.ts';
-import { verifyLicenseTokenOffline } from './offline-verify.ts';
+import { TxClaimLockDO } from './tx-lock-do.ts';
 import type {
   ChallengeRecord,
   DownloadGrantRecord,
@@ -13,25 +12,19 @@ import type {
   Tier
 } from './types.ts';
 
+export { TxClaimLockDO };
+
 const TX_HASH_RE = /^0x[0-9a-fA-F]{64}$/;
 const EVM_ADDR_RE = /^0x[0-9a-fA-F]{40}$/;
-const SIG_RE = /^0x[0-9a-fA-F]{130}$/;
+// Supports both 65-byte EOA signatures (130 hex) and variable-length ERC-1271 / EIP-6492 Smart Wallet ABI signatures
+const SIG_RE = /^0x(?:[0-9a-fA-F]{2}){32,8192}$/;
 const POSITIVE_INT_RE = /^[1-9]\d*$/;
-const SCOPE_STOREFRONT = 'storefront:zerofiat';
-const DEFAULT_HOSTED_FREE_QUOTA_ATOMIC = 10_000_000_000n;
+const MAX_JSON_BODY_BYTES = 32_768;
 const DEFAULT_BASE_RPC_URLS = [
   'https://mainnet.base.org',
   'https://base-rpc.publicnode.com',
   'https://1rpc.io/base'
 ];
-
-interface GlobalClaimRecord {
-  scope: string;
-  payer: string;
-  tier: string;
-  txHash: string;
-  claimedAt: number;
-}
 
 function getBaseRpcUrls(env: Env): string[] {
   if (env.BASE_RPC_URLS && env.BASE_RPC_URLS.trim()) {
@@ -77,30 +70,8 @@ async function hmacSha256Hex(secret: string, message: string): Promise<string> {
   return toHex(new Uint8Array(sig));
 }
 
-function getTierPriceAtomic(env: Env, tier: Tier): bigint {
-  if (tier === 'team') {
-    return BigInt(env.TEAM_PRICE_USDC_ATOMIC || '49000000');
-  }
-  return BigInt(env.SUPPORTER_PRICE_USDC_ATOMIC || env.SOLO_PRICE_USDC_ATOMIC || '5000000');
-}
-
-function getHostedFreeQuotaAtomic(env: Env): bigint {
-  return BigInt(env.HOSTED_FREE_QUOTA_ATOMIC || DEFAULT_HOSTED_FREE_QUOTA_ATOMIC.toString());
-}
-
-async function checkTeamLicenseHeader(
-  env: Env,
-  licenseHeader: string | undefined
-): Promise<boolean> {
-  if (!licenseHeader || !env.LICENSE_SIGNING_PUBLIC_SPKI_B64) {
-    return false;
-  }
-  const verified = await verifyLicenseTokenOffline(licenseHeader.trim(), {
-    publicKeySpkiB64: env.LICENSE_SIGNING_PUBLIC_SPKI_B64,
-    expectedPrefix: env.TOKEN_PREFIX || 'ZEROFIAT-KIT-v1.',
-    expectedProduct: env.PRODUCT_ID || 'zerofiat-base-checkout-kit'
-  });
-  return verified.valid && verified.payload?.tier === 'team';
+function getCheckoutAmountAtomic(env: Env): bigint {
+  return BigInt(env.CHECKOUT_AMOUNT_USDC_ATOMIC || '1000000');
 }
 
 function buildChallengeMessage(params: {
@@ -121,6 +92,20 @@ function buildChallengeMessage(params: {
   ].join('\n');
 }
 
+async function parseBoundedJsonBody<T>(
+  req: Request
+): Promise<{ ok: true; data: T } | { ok: false; status: 400 | 413; error: string }> {
+  const text = await req.text();
+  if (new TextEncoder().encode(text).byteLength > MAX_JSON_BODY_BYTES) {
+    return { ok: false, status: 413, error: 'PAYLOAD_TOO_LARGE' };
+  }
+  try {
+    return { ok: true, data: JSON.parse(text) as T };
+  } catch {
+    return { ok: false, status: 400, error: 'INVALID_JSON' };
+  }
+}
+
 const app = new Hono<{ Bindings: Env }>();
 
 app.use(
@@ -132,8 +117,7 @@ app.use(
       'Content-Type',
       'X-Payment',
       'X-Payment-Signature',
-      'X-Payment-Address',
-      'X-ApexHive-License'
+      'X-Payment-Address'
     ],
     exposeHeaders: ['X-Payment-Required']
   })
@@ -154,53 +138,42 @@ app.get('/api/health', (c) => {
     brand: c.env.BRAND_NAME || 'ApexHive Labs',
     chainId: Number(c.env.BASE_CHAIN_ID || '8453'),
     kvBound: Boolean(c.env.LICENSES_KV),
-    globalKvBound: Boolean(c.env.GLOBAL_CLAIMED_TX_KV),
+    durableObjectLockBound: Boolean(c.env.TX_CLAIM_LOCK),
+    smartWalletSupport: ['EOA', 'ERC-1271', 'EIP-6492'],
     openSourceLicense: 'MIT',
-    hostedFreeQuotaAtomic: getHostedFreeQuotaAtomic(c.env).toString(),
+    unlimitedFreeMit: true,
     supportEmail: 'apexhive.hq@proton.me'
   });
 });
 
 app.get('/api/config', (c) => {
-  const supporterAtomic = getTierPriceAtomic(c.env, 'supporter');
-  const teamAtomic = getTierPriceAtomic(c.env, 'team');
-  const freeQuotaAtomic = getHostedFreeQuotaAtomic(c.env);
+  const checkoutAtomic = getCheckoutAmountAtomic(c.env);
   return c.json({
     brand: c.env.BRAND_NAME || 'ApexHive Labs',
     product: c.env.PRODUCT_ID || 'zerofiat-base-checkout-kit',
     tokenPrefix: c.env.TOKEN_PREFIX || 'ZEROFIAT-KIT-v1.',
     openSourceLicense: 'MIT',
+    unlimitedFreeMit: true,
+    smartWalletSupport: ['EOA', 'ERC-1271', 'EIP-6492'],
     publicRepoUrl: 'https://github.com/apexhive-hq/zerofiat-base-checkout-kit',
     chainId: Number(c.env.BASE_CHAIN_ID || '8453'),
     network: 'Base Mainnet',
     usdcContract: c.env.BASE_USDC_CONTRACT,
     payToAddress: c.env.PAY_TO_EVM_ADDRESS,
     publicKeySpkiB64: c.env.LICENSE_SIGNING_PUBLIC_SPKI_B64 ?? null,
-    hostedFreeQuotaAtomic: freeQuotaAtomic.toString(),
-    tiers: {
-      supporter: {
-        label: 'Sponsor / Supporter (Optional MIT Backing)',
-        usdc: String(Number(supporterAtomic) / 1_000_000),
-        atomic: supporterAtomic.toString()
-      },
-      team: {
-        label: 'Team / Hosted Pro (Unlimited Hosted API + 5 Seats)',
-        usdc: String(Number(teamAtomic) / 1_000_000),
-        atomic: teamAtomic.toString()
-      }
+    checkoutDemo: {
+      tier: 'standard',
+      label: 'Standard Verification Attestation (Self-Hosted MIT Rail)',
+      usdc: String(Number(checkoutAtomic) / 1_000_000),
+      atomic: checkoutAtomic.toString()
     },
     supportEmail: 'apexhive.hq@proton.me',
-    optionalRails: {
-      solanaUsdc: c.env.SOLANA_RECEIVE_ADDRESS,
-      bitcoin: c.env.BTC_RECEIVE_ADDRESS,
-      tronTrxUsdt: c.env.TRON_RECEIVE_ADDRESS
-    },
     selfCustodyWarning:
-      'SELF-CUSTODY WALLET ONLY: Send Base USDC ONLY from a wallet you control (MetaMask, Rabby, Coinbase Wallet). NEVER send directly from a centralized exchange (CEX) withdrawal—exchange hot wallets cannot sign the EIP-191 ownership challenge. Sent from a CEX by mistake or paying via Solana/BTC/TRON? Contact apexhive.hq@proton.me with your txHash.'
+      'SELF-CUSTODY OR SMART WALLET ONLY: Send Base USDC from an EOA (MetaMask, Rabby) or Base Smart Wallet (Coinbase Smart Wallet, Safe — ERC-1271/EIP-6492 supported). NEVER send directly from a centralized exchange (CEX) withdrawal—exchange hot wallets cannot sign ownership challenges.'
   });
 });
 
-// ─── Cloud Hosted Verify API (Free up to $10,000 USDC cumulative GMV) ───────
+// ─── Free MIT Base USDC Verification Rail (Unlimited GMV, Atomic DO Lock) ────
 
 app.get('/api/hosted/quota/:merchantAddress', async (c) => {
   const merchantRaw = (c.req.param('merchantAddress') ?? '').trim();
@@ -212,37 +185,38 @@ app.get('/api/hosted/quota/:merchantAddress', async (c) => {
   }
 
   const merchantLower = merchantRaw.toLowerCase();
-  const freeQuota = getHostedFreeQuotaAtomic(c.env);
   const gmvRaw = await c.env.LICENSES_KV.get(`hosted_gmv:${merchantLower}`);
   const gmv = BigInt(gmvRaw || '0');
-  const freeRemaining = freeQuota > gmv ? freeQuota - gmv : 0n;
-  const proUnlocked = await checkTeamLicenseHeader(c.env, c.req.header('X-ApexHive-License'));
 
   return c.json({
     merchantAddress: merchantLower,
     gmvAtomic: gmv.toString(),
-    freeQuotaAtomic: freeQuota.toString(),
-    freeRemainingAtomic: freeRemaining.toString(),
-    proUnlocked
+    unlimitedFreeMit: true,
+    openSourceLicense: 'MIT'
   });
 });
 
 app.post('/api/hosted/verify', async (c) => {
-  let body: {
+  if (!c.env.TX_CLAIM_LOCK || !c.env.LICENSES_KV) {
+    return c.json(
+      { error: 'SERVER_MISCONFIGURED', message: 'Missing TX_CLAIM_LOCK or LICENSES_KV binding.' },
+      500
+    );
+  }
+
+  const parsedBody = await parseBoundedJsonBody<{
     txHash?: string;
     merchantAddress?: string;
     minAmountAtomic?: string | number;
     expectedAmountAtomic?: string | number;
     challengeMessage?: string;
     signature?: string;
-  };
-  try {
-    body = await c.req.json();
-  } catch {
-    return c.json({ error: 'INVALID_JSON' }, 400);
+  }>(c.req.raw);
+  if (!parsedBody.ok) {
+    return c.json({ error: parsedBody.error }, parsedBody.status);
   }
+  const body = parsedBody.data;
 
-  // Validate inputs BEFORE touching KV or RPC
   const txHash = (body.txHash ?? '').trim();
   const merchantAddress = (body.merchantAddress ?? '').trim();
 
@@ -275,96 +249,21 @@ app.post('/api/hosted/verify', async (c) => {
   }
   if (hasSig && !SIG_RE.test(body.signature!.trim())) {
     return c.json(
-      { error: 'INVALID_SIGNATURE_PROOF', message: 'Expected 0x-prefixed 130-hex EIP-191 signature.' },
+      {
+        error: 'INVALID_SIGNATURE_PROOF',
+        message: 'Expected 0x-prefixed even-length hex EOA or ERC-1271/EIP-6492 signature.'
+      },
       400
     );
   }
 
   const txLower = txHash.toLowerCase();
   const merchantLower = merchantAddress.toLowerCase();
-  const freeQuota = getHostedFreeQuotaAtomic(c.env);
-  const proUnlocked = await checkTeamLicenseHeader(c.env, c.req.header('X-ApexHive-License'));
+  const rpcUrls = getBaseRpcUrls(c.env);
 
-  // 1. Idempotent cache hit: MUST re-check paidAtomic >= requiredAmount AND optional signature
-  const claimedKey = `hosted_claimed:${txLower}`;
-  const existingRaw = await c.env.LICENSES_KV.get(claimedKey);
-  if (existingRaw) {
-    const existing = JSON.parse(existingRaw) as HostedClaimRecord;
-    if (existing.merchantAddress.toLowerCase() !== merchantLower) {
-      return c.json(
-        {
-          error: 'TX_ALREADY_CLAIMED',
-          message: 'Transaction hash has already been verified for another merchantAddress.'
-        },
-        403
-      );
-    }
-    if (BigInt(existing.paidAtomic) < requiredAmount) {
-      return c.json(
-        {
-          error: 'INSUFFICIENT_AMOUNT',
-          message: `Cached transfer amount (${existing.paidAtomic}) is below required minAmountAtomic (${requiredAmount.toString()}).`
-        },
-        403
-      );
-    }
-    if (hasMsg && hasSig) {
-      const sigOk = await verifyMessage({
-        address: existing.payer as `0x${string}`,
-        message: body.challengeMessage!,
-        signature: body.signature!.trim() as `0x${string}`
-      }).catch(() => false);
-      if (!sigOk) {
-        return c.json(
-          { error: 'INVALID_SIGNATURE', message: 'EIP-191 signature failed against cached payer address.' },
-          403
-        );
-      }
-    }
-
-    const gmvRaw = await c.env.LICENSES_KV.get(`hosted_gmv:${merchantLower}`);
-    const gmv = BigInt(gmvRaw || '0');
-    const freeRemaining = freeQuota > gmv ? freeQuota - gmv : 0n;
-    return c.json({
-      ok: true,
-      cached: true,
-      mode: existing.mode,
-      txHash: txLower,
-      merchantAddress: merchantLower,
-      payer: existing.payer,
-      paidAtomic: existing.paidAtomic,
-      gmvAtomic: gmv.toString(),
-      freeQuotaAtomic: freeQuota.toString(),
-      freeRemainingAtomic: freeRemaining.toString(),
-      proUnlocked
-    });
-  }
-
-  // 2. Pre-RPC quota check
-  const gmvKey = `hosted_gmv:${merchantLower}`;
-  const gmvRaw = await c.env.LICENSES_KV.get(gmvKey);
-  const currentGmv = BigInt(gmvRaw || '0');
-  if (currentGmv >= freeQuota && !proUnlocked) {
-    return c.json(
-      {
-        error: 'QUOTA_EXCEEDED_10K',
-        message:
-          'Free $10,000 USDC Hosted API quota reached for this merchantAddress. Self-host the MIT code for free or upgrade to Team / Hosted Pro (49 USDC) and pass X-ApexHive-License.',
-        merchantAddress: merchantLower,
-        gmvAtomic: currentGmv.toString(),
-        freeQuotaAtomic: freeQuota.toString(),
-        freeRemainingAtomic: '0',
-        selfHostRepo: 'https://github.com/apexhive-hq/zerofiat-base-checkout-kit',
-        upgradeTier: 'team',
-        supportEmail: 'apexhive.hq@proton.me'
-      },
-      402
-    );
-  }
-
-  // 3. Verify Base Mainnet USDC Transfer directly to caller's merchantAddress
+  // 1. Verify Base Mainnet USDC Transfer + optional EOA/Smart-Wallet signature
   const verifyRes = await verifyBaseUsdcTransfer({
-    rpcUrls: getBaseRpcUrls(c.env),
+    rpcUrls,
     txHash: txLower,
     expectedUsdcContract: c.env.BASE_USDC_CONTRACT,
     expectedPayTo: merchantLower,
@@ -376,81 +275,95 @@ app.post('/api/hosted/verify', async (c) => {
   });
 
   if (!verifyRes.ok) {
+    // Allow cached replay recovery if already claimed with matching merchant & amount?
+    // When RPC passes above, fall through to atomic DO lock.
     return c.json({ error: verifyRes.error, message: verifyRes.message }, verifyRes.status);
   }
 
-  // 4. Enforce cumulative cap: currentGmv + txAmount <= freeQuota (unless valid Team license)
-  const paidBig = BigInt(verifyRes.paidAtomic);
-  const nextGmv = currentGmv + paidBig;
-  if (nextGmv > freeQuota && !proUnlocked) {
+  // 2. Acquire atomic single-threaded Durable Object claim lock (zero KV race condition)
+  const lockId = c.env.TX_CLAIM_LOCK.idFromName(txLower);
+  const lockStub = c.env.TX_CLAIM_LOCK.get(lockId);
+  const lockRes = await lockStub.fetch('https://lock.internal/claim-hosted', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      txHash: txLower,
+      merchantAddress: merchantLower,
+      payer: verifyRes.payer,
+      paidAtomic: verifyRes.paidAtomic,
+      requiredAtomic: requiredAmount.toString()
+    })
+  });
+
+  const lockJson = (await lockRes.json()) as {
+    ok: boolean;
+    cached?: boolean;
+    error?: string;
+    message?: string;
+    record?: HostedClaimRecord;
+  };
+  if (!lockRes.ok || !lockJson.ok || !lockJson.record) {
     return c.json(
-      {
-        error: 'QUOTA_EXCEEDED_10K',
-        message:
-          'Adding this transaction exceeds the free $10,000 USDC Hosted API quota. Self-host MIT free or pass a valid Team / Hosted Pro X-ApexHive-License.',
-        merchantAddress: merchantLower,
-        gmvAtomic: currentGmv.toString(),
-        txPaidAtomic: paidBig.toString(),
-        freeQuotaAtomic: freeQuota.toString(),
-        freeRemainingAtomic: (freeQuota > currentGmv ? freeQuota - currentGmv : 0n).toString(),
-        selfHostRepo: 'https://github.com/apexhive-hq/zerofiat-base-checkout-kit',
-        upgradeTier: 'team',
-        supportEmail: 'apexhive.hq@proton.me'
-      },
-      402
+      { error: lockJson.error || 'TX_ALREADY_CLAIMED', message: lockJson.message || 'Claim conflict.' },
+      403
     );
   }
 
-  const mode: 'free_tier' | 'hosted_pro' = proUnlocked ? 'hosted_pro' : 'free_tier';
-  const claimRecord: HostedClaimRecord = {
-    txHash: txLower,
-    merchantAddress: merchantLower,
-    payer: verifyRes.payer,
-    paidAtomic: verifyRes.paidAtomic,
-    mode,
-    verifiedAt: Date.now()
-  };
+  // Re-verify optional signature against locked payer on cached hit
+  if (lockJson.cached && hasMsg && hasSig) {
+    const sigOk = await verifySmartWalletOrEoaSignature({
+      rpcUrls,
+      address: lockJson.record.payer,
+      message: body.challengeMessage!,
+      signature: body.signature!.trim()
+    });
+    if (!sigOk) {
+      return c.json(
+        { error: 'INVALID_SIGNATURE', message: 'Signature failed against locked payer address.' },
+        403
+      );
+    }
+  }
 
-  await Promise.all([
-    c.env.LICENSES_KV.put(claimedKey, JSON.stringify(claimRecord)),
-    c.env.LICENSES_KV.put(gmvKey, nextGmv.toString())
-  ]);
+  const gmvKey = `hosted_gmv:${merchantLower}`;
+  const currentGmv = BigInt((await c.env.LICENSES_KV.get(gmvKey)) || '0');
+  let nextGmv = currentGmv;
+  if (!lockJson.cached) {
+    nextGmv = currentGmv + BigInt(verifyRes.paidAtomic);
+    await c.env.LICENSES_KV.put(gmvKey, nextGmv.toString());
+  }
 
-  const freeRemaining = freeQuota > nextGmv ? freeQuota - nextGmv : 0n;
   return c.json({
     ok: true,
-    cached: false,
-    mode,
+    cached: Boolean(lockJson.cached),
+    mode: 'free_mit',
+    unlimitedFreeMit: true,
     txHash: txLower,
     merchantAddress: merchantLower,
-    payer: verifyRes.payer,
-    paidAtomic: verifyRes.paidAtomic,
+    payer: lockJson.record.payer,
+    paidAtomic: lockJson.record.paidAtomic,
     confirmations: verifyRes.confirmations,
-    gmvAtomic: nextGmv.toString(),
-    freeQuotaAtomic: freeQuota.toString(),
-    freeRemainingAtomic: freeRemaining.toString(),
-    proUnlocked
+    gmvAtomic: nextGmv.toString()
   });
 });
 
-// ─── Storefront Non-Custodial Checkout (Supporter 5 USDC / Team 49 USDC) ───
+// ─── Non-Custodial Checkout + Ed25519 Receipt Attestation Demo ──────────────
 
 app.post('/api/challenge', async (c) => {
-  let body: { txHash?: string; tier?: string };
-  try {
-    body = await c.req.json();
-  } catch {
-    return c.json({ error: 'INVALID_JSON' }, 400);
+  const parsedBody = await parseBoundedJsonBody<{ txHash?: string; tier?: string }>(c.req.raw);
+  if (!parsedBody.ok) {
+    return c.json({ error: parsedBody.error }, parsedBody.status);
   }
+  const body = parsedBody.data;
 
   const txHash = (body.txHash ?? '').trim();
-  const tier = (body.tier ?? 'supporter').trim() as Tier;
+  const tier = (body.tier ?? 'standard').trim() as Tier;
 
   if (!TX_HASH_RE.test(txHash)) {
     return c.json({ error: 'INVALID_TX_HASH', message: 'Expected 0x-prefixed 64-hex txHash.' }, 400);
   }
-  if (tier !== 'supporter' && tier !== 'team') {
-    return c.json({ error: 'INVALID_TIER', message: 'Tier must be supporter or team.' }, 400);
+  if (tier !== 'standard') {
+    return c.json({ error: 'INVALID_TIER', message: 'Tier must be standard.' }, 400);
   }
 
   const ttl = Math.max(60, Number(c.env.CHALLENGE_TTL_SECONDS || '300'));
@@ -486,42 +399,48 @@ app.post('/api/challenge', async (c) => {
 });
 
 app.post('/api/verify', async (c) => {
-  // Check required secrets and shared KV BEFORE touching challenge keys
   if (
     !c.env.LICENSE_SIGNING_PRIVATE_JWK ||
     !c.env.DOWNLOAD_HMAC_SECRET ||
     c.env.DOWNLOAD_HMAC_SECRET.length < 16 ||
-    !c.env.GLOBAL_CLAIMED_TX_KV
+    !c.env.TX_CLAIM_LOCK
   ) {
     return c.json(
       {
         error: 'SERVER_MISCONFIGURED',
-        message: 'Missing LICENSE_SIGNING_PRIVATE_JWK, DOWNLOAD_HMAC_SECRET, or GLOBAL_CLAIMED_TX_KV.'
+        message: 'Missing LICENSE_SIGNING_PRIVATE_JWK, DOWNLOAD_HMAC_SECRET, or TX_CLAIM_LOCK.'
       },
       500
     );
   }
 
-  let body: { txHash?: string; nonce?: string; signature?: string; tier?: string };
-  try {
-    body = await c.req.json();
-  } catch {
-    return c.json({ error: 'INVALID_JSON' }, 400);
+  const parsedBody = await parseBoundedJsonBody<{
+    txHash?: string;
+    nonce?: string;
+    signature?: string;
+    tier?: string;
+  }>(c.req.raw);
+  if (!parsedBody.ok) {
+    return c.json({ error: parsedBody.error }, parsedBody.status);
   }
+  const body = parsedBody.data;
 
   const txHash = (body.txHash ?? '').trim();
   const nonce = (body.nonce ?? '').trim();
   const signature = (body.signature ?? '').trim();
-  const tier = (body.tier ?? 'supporter').trim() as Tier;
+  const tier = (body.tier ?? 'standard').trim() as Tier;
 
   if (!TX_HASH_RE.test(txHash) || !nonce || !SIG_RE.test(signature)) {
     return c.json(
-      { error: 'INVALID_REQUEST', message: 'Provide valid txHash, nonce, and EIP-191 signature.' },
+      {
+        error: 'INVALID_REQUEST',
+        message: 'Provide valid txHash, nonce, and EOA or ERC-1271/EIP-6492 signature.'
+      },
       400
     );
   }
-  if (tier !== 'supporter' && tier !== 'team') {
-    return c.json({ error: 'INVALID_TIER', message: 'Tier must be supporter or team.' }, 400);
+  if (tier !== 'standard') {
+    return c.json({ error: 'INVALID_TIER', message: 'Tier must be standard.' }, 400);
   }
 
   const txLower = txHash.toLowerCase();
@@ -554,7 +473,7 @@ app.post('/api/verify', async (c) => {
     txHash: txLower,
     expectedUsdcContract: c.env.BASE_USDC_CONTRACT,
     expectedPayTo: c.env.PAY_TO_EVM_ADDRESS,
-    requiredAtomicAmount: getTierPriceAtomic(c.env, tier),
+    requiredAtomicAmount: getCheckoutAmountAtomic(c.env),
     minConfirmations: Math.max(1, Number(c.env.MIN_CONFIRMATIONS || '2')),
     challengeMessage: challenge.message,
     signature,
@@ -568,53 +487,39 @@ app.post('/api/verify', async (c) => {
     return c.json({ error: verifyRes.error, message: verifyRes.message }, verifyRes.status);
   }
 
-  // Enforce shared cross-product GLOBAL_CLAIMED_TX_KV before claiming
-  const globalKey = `global_tx:${txLower}`;
-  const globalRaw = await c.env.GLOBAL_CLAIMED_TX_KV.get(globalKey);
-  if (globalRaw) {
-    const globalRec = JSON.parse(globalRaw) as GlobalClaimRecord;
-    if (globalRec.scope !== SCOPE_STOREFRONT) {
-      await c.env.LICENSES_KV.delete(challengeKey);
-      return c.json(
-        {
-          error: 'TX_ALREADY_CLAIMED_ELSEWHERE',
-          message: `This transaction hash has already been claimed on ${globalRec.scope}.`
-        },
-        403
-      );
-    }
-    if (
-      globalRec.payer?.toLowerCase() !== verifyRes.payer.toLowerCase() ||
-      globalRec.tier !== tier
-    ) {
-      await c.env.LICENSES_KV.delete(challengeKey);
-      return c.json(
-        { error: 'TX_ALREADY_CLAIMED', message: 'This transaction hash has already been claimed.' },
-        403
-      );
-    }
+  // Atomic Durable Object lock prevents concurrent KV replay race conditions
+  const lockId = c.env.TX_CLAIM_LOCK.idFromName(txLower);
+  const lockStub = c.env.TX_CLAIM_LOCK.get(lockId);
+  const lockRes = await lockStub.fetch('https://lock.internal/claim-checkout', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      txHash: txLower,
+      payer: verifyRes.payer,
+      tier,
+      paidAtomic: verifyRes.paidAtomic
+    })
+  });
+
+  const lockJson = (await lockRes.json()) as {
+    ok: boolean;
+    reclaimed?: boolean;
+    error?: string;
+    message?: string;
+  };
+  if (!lockRes.ok || !lockJson.ok) {
+    await c.env.LICENSES_KV.delete(challengeKey);
+    return c.json(
+      {
+        error: lockJson.error || 'TX_ALREADY_CLAIMED',
+        message: lockJson.message || 'This transaction hash has already been claimed.'
+      },
+      403
+    );
   }
 
-  // Consume single-use challenge ONLY after TX, confirmations, signature, and global scope succeed
+  // Consume single-use challenge ONLY after TX, confirmations, signature, and DO lock succeed
   await c.env.LICENSES_KV.delete(challengeKey);
-
-  const claimedKey = `claimed_tx:${txLower}`;
-  const existingClaimRaw = await c.env.LICENSES_KV.get(claimedKey);
-  let reclaimed = false;
-  if (existingClaimRaw) {
-    const existing = JSON.parse(existingClaimRaw) as { payer?: string; tier?: Tier };
-    if (
-      existing.payer?.toLowerCase() === verifyRes.payer.toLowerCase() &&
-      existing.tier === tier
-    ) {
-      reclaimed = true;
-    } else {
-      return c.json(
-        { error: 'TX_ALREADY_CLAIMED', message: 'This transaction hash has already been claimed.' },
-        403
-      );
-    }
-  }
 
   const issuedAt = Date.now();
   const productId = c.env.PRODUCT_ID || 'zerofiat-base-checkout-kit';
@@ -648,38 +553,13 @@ app.post('/api/verify', async (c) => {
     licenseToken
   };
 
-  const kvWrites: Array<Promise<void>> = [
-    c.env.LICENSES_KV.put(`dl:${grantId}`, JSON.stringify(grant), {
-      expirationTtl: downloadTtl
-    })
-  ];
-  if (!reclaimed) {
-    const globalRecord: GlobalClaimRecord = {
-      scope: SCOPE_STOREFRONT,
-      payer: verifyRes.payer,
-      tier,
-      txHash: txLower,
-      claimedAt: issuedAt
-    };
-    kvWrites.push(
-      c.env.LICENSES_KV.put(
-        claimedKey,
-        JSON.stringify({
-          txHash: txLower,
-          payer: verifyRes.payer,
-          tier,
-          paidAtomic: verifyRes.paidAtomic,
-          issuedAt
-        })
-      ),
-      c.env.GLOBAL_CLAIMED_TX_KV.put(globalKey, JSON.stringify(globalRecord))
-    );
-  }
-  await Promise.all(kvWrites);
+  await c.env.LICENSES_KV.put(`dl:${grantId}`, JSON.stringify(grant), {
+    expirationTtl: downloadTtl
+  });
 
   return c.json({
     ok: true,
-    reclaimed,
+    reclaimed: Boolean(lockJson.reclaimed),
     tier,
     payer: verifyRes.payer,
     txHash: txLower,
@@ -737,10 +617,8 @@ app.get('/api/download', async (c) => {
   }
 
   const releaseRes = await streamReleaseOrPublicCertificate({
-    assetUrl: c.env.GITHUB_RELEASE_ASSET_URL,
     publicArchiveUrl: c.env.PUBLIC_ARCHIVE_URL,
-    githubToken: c.env.GITHUB_RELEASE_READ_TOKEN,
-    downloadFilename: c.env.RELEASE_FILENAME || 'zerofiat-base-checkout-kit-v2.0.0.zip',
+    downloadFilename: c.env.RELEASE_FILENAME || 'zerofiat-base-checkout-kit.zip',
     certificatePayload: {
       ok: true,
       product: c.env.PRODUCT_ID || 'zerofiat-base-checkout-kit',

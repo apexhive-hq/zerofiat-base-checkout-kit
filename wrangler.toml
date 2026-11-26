@@ -11,9 +11,13 @@ binding = "ASSETS"
 binding = "LICENSES_KV"
 id = "d6e0c47cb0894819b3667e5c462718b2"
 
-[[kv_namespaces]]
-binding = "GLOBAL_CLAIMED_TX_KV"
-id = "1ff457c56d7b4ddfb78e727fd6b4725b"
+[[durable_objects.bindings]]
+name = "TX_CLAIM_LOCK"
+class_name = "TxClaimLockDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["TxClaimLockDO"]
 
 [vars]
 BRAND_NAME = "ApexHive Labs"
@@ -25,15 +29,9 @@ BASE_USDC_CONTRACT = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
 BASE_CHAIN_ID = "8453"
 BASE_RPC_URL = "https://mainnet.base.org"
 BASE_RPC_URLS = "https://mainnet.base.org,https://base-rpc.publicnode.com,https://1rpc.io/base"
-SUPPORTER_PRICE_USDC_ATOMIC = "5000000"
-TEAM_PRICE_USDC_ATOMIC = "49000000"
-HOSTED_FREE_QUOTA_ATOMIC = "10000000000"
+CHECKOUT_AMOUNT_USDC_ATOMIC = "1000000"
 MIN_CONFIRMATIONS = "2"
 CHALLENGE_TTL_SECONDS = "300"
 DOWNLOAD_TTL_SECONDS = "600"
 PUBLIC_ARCHIVE_URL = "https://github.com/apexhive-hq/zerofiat-base-checkout-kit/archive/refs/heads/main.zip"
-GITHUB_RELEASE_ASSET_URL = "https://api.github.com/repos/apexhive-hq/zerofiat-base-checkout-kit/releases/assets/789508288"
-RELEASE_FILENAME = "zerofiat-base-checkout-kit-v2.0.0.zip"
-SOLANA_RECEIVE_ADDRESS = "4UyTxvrcqtYEsm5LQuiD5ofEJ4bMk6XJqv6G4St3GC9F"
-BTC_RECEIVE_ADDRESS = "bc1q2j0yqtn2cyslurxvx050vpgnamdqhxtegfs789"
-TRON_RECEIVE_ADDRESS = "TFVqcqQuGKsjwb6tFnhLyL3UudPdA6VnnN"
+RELEASE_FILENAME = "zerofiat-base-checkout-kit.zip"

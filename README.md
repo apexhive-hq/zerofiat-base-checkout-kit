@@ -1,8 +1,8 @@
-# `zerofiat-base-checkout-kit` (`v2.0.0`) — ApexHive Labs
+# `zerofiat-base-checkout-kit` (`v2.1.0`) — ApexHive Labs
 
-> **Non-custodial Base USDC payment verifier, EIP-191 ownership proof, offline Ed25519 licensing, and Free-Until-$10K Hosted Verify API built for Cloudflare Workers Free Tier (`$0/mo`, MIT Open Source).**
+> **100% Free MIT non-custodial Base USDC payment verifier with EOA + Smart Wallet (`ERC-1271` / `EIP-6492`) signature verification, Cloudflare Durable Object atomic anti-replay locks (`TxClaimLockDO`), and portable Ed25519 attestation certificates.**
 
-- **Live Hosted API & Quota Dashboard:** https://zerofiat-base-checkout-kit.apexhive-hq.workers.dev
+- **Live Reference Worker:** https://zerofiat-base-checkout-kit.apexhive-hq.workers.dev
 
 ---
 
@@ -10,41 +10,37 @@
 
 ```text
 +-------------------------------------------------------------------+
-|  Browser / Backend Checkout Client                                |
+|  Browser / Backend Checkout Client (EOA, Coinbase Smart Wallet,   |
+|  Safe — EOA EIP-191 + ERC-1271 / EIP-6492 supported)              |
 |  1. Self-custody Base USDC transfer -> merchantAddress / payTo    |
-|  2. Calls Hosted API OR self-hosted Worker endpoint               |
+|  2. Calls /api/hosted/verify OR /api/challenge -> /api/verify     |
 +---------------------------------+---------------------------------+
                                   |
                                   v
 +-------------------------------------------------------------------+
-|  zerofiat-base-checkout-kit (Cloudflare Workers + Workers KV)     |
+|  zerofiat-base-checkout-kit (Cloudflare Workers Free + DO + KV)   |
 |  - Multi-RPC Base JSON-RPC failover (BASE_RPC_URLS)               |
-|  - Exact BigInt 6-decimal ERC-20 Transfer log aggregation         |
-|  - EIP-191 viem.verifyMessage ownership proof + replay protection |
-|  - Portable WebCrypto Ed25519 license signing & offline verifier  |
+|  - Strict BigInt 6-decimal ERC-20 Transfer log aggregation        |
+|  - viem publicClient.verifyMessage (EOA + ERC-1271 + EIP-6492)    |
+|  - TxClaimLockDO SQLite Durable Object atomic txHash lock         |
+|  - Portable WebCrypto Ed25519 receipt signing & offline verifier  |
 +-------------------------------------------------------------------+
 ```
 
 ---
 
-## Hosted Verify API (Free up to `$10,000 USDC` Cumulative GMV)
+## Stateless Verification Endpoints (100% Free MIT Rail)
 
-Verify Base Mainnet USDC (`0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`) settlements sent directly to **your** `merchantAddress` without provisioning infrastructure:
+Verify Base Mainnet USDC (`0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`) transfers directly to **your** `merchantAddress` with atomic anti-replay protection and unlimited GMV:
 
 ```bash
-# 1. Check live cumulative verified GMV & remaining free quota (0 KV writes)
+# 1. Check cumulative verified GMV for a merchantAddress (0 KV writes)
 curl https://zerofiat-base-checkout-kit.apexhive-hq.workers.dev/api/hosted/quota/0xYourMerchantAddress
 
-# 2. Verify a settled Base USDC transaction (idempotent anti-replay)
+# 2. Verify a settled Base USDC transaction (idempotent + Durable Object locked)
 curl -X POST https://zerofiat-base-checkout-kit.apexhive-hq.workers.dev/api/hosted/verify \
   -H "Content-Type: application/json" \
-  -d '{"txHash":"0x...","merchantAddress":"0xYourMerchantAddress","minAmountAtomic":"5000000"}'
-
-# 3. Above $10,000 USDC cumulative GMV, self-host MIT free OR attach a Hosted Pro token:
-curl -X POST https://zerofiat-base-checkout-kit.apexhive-hq.workers.dev/api/hosted/verify \
-  -H "Content-Type: application/json" \
-  -H "X-ApexHive-License: ZEROFIAT-KIT-v1.<payload>.<sig>" \
-  -d '{"txHash":"0x...","merchantAddress":"0xYourMerchantAddress"}'
+  -d '{"txHash":"0x...","merchantAddress":"0xYourMerchantAddress","minAmountAtomic":"1000000"}'
 ```
 
 ---
@@ -55,11 +51,12 @@ curl -X POST https://zerofiat-base-checkout-kit.apexhive-hq.workers.dev/api/host
 git clone https://github.com/apexhive-hq/zerofiat-base-checkout-kit.git
 cd zerofiat-base-checkout-kit
 pnpm install --ignore-scripts
+pnpm exec playwright install chromium
 pnpm run typecheck
 pnpm test
 ```
 
-Configure isolated KV storage and ephemeral attestation secrets on your Cloudflare account:
+Configure KV storage and signing secrets on your Cloudflare account (Workers Free Tier supports SQLite-backed Durable Objects via `new_sqlite_classes`):
 
 ```bash
 wrangler kv namespace create LICENSES_KV
@@ -74,13 +71,15 @@ wrangler deploy
 ## Security & Resilience Design
 
 - **Zero Custody:** Workers hold zero wallet private keys or treasury spending rights; Base USDC settles directly to your public `PAY_TO_EVM_ADDRESS` or `merchantAddress`.
-- **Same-Payer Re-Claim Recovery:** Verified original payers can safely re-claim Ed25519 tokens and download grants if a tab closes, while mismatched signers/tiers are rejected (`403 TX_ALREADY_CLAIMED`).
-- **Challenge Nonce Retention:** Unconfirmed transactions (`INSUFFICIENT_CONFIRMATIONS`) and transient RPC failures preserve challenge nonces so immediate retries succeed cleanly.
-- **Multi-RPC Failover:** Comma-separated `BASE_RPC_URLS` automatically fail over across Base JSON-RPC endpoints on `429`/`5xx`/network timeouts.
-- **Fail-Closed Production Secrets:** Missing `LICENSE_SIGNING_PRIVATE_JWK` or `DOWNLOAD_HMAC_SECRET` fails closed with HTTP `500 SERVER_MISCONFIGURED`.
+- **Smart Contract Wallet Support (`ERC-1271` / `EIP-6492`):** Accepts variable-length ABI signatures and verifies via `viem` `publicClient.verifyMessage` over multi-RPC Base transport (`BASE_RPC_URLS`), supporting Coinbase Smart Wallet and Safe alongside standard EOAs.
+- **Atomic Replay Lock (`TxClaimLockDO`):** Every `txHash` claim routes through a single-threaded SQLite-backed Durable Object (`TX_CLAIM_LOCK`), eliminating Workers KV eventual-consistency race conditions under concurrent requests.
+- **Challenge Nonce Retention & Failover:** Unconfirmed transactions (`INSUFFICIENT_CONFIRMATIONS`) preserve challenge nonces for immediate retries, while `BASE_RPC_URLS` fails over across Base RPC endpoints on `429`/`5xx`/timeouts.
+- **Fail-Closed Secrets & Bounded Payloads:** Missing `LICENSE_SIGNING_PRIVATE_JWK`, `DOWNLOAD_HMAC_SECRET`, or `TX_CLAIM_LOCK` fails closed with HTTP `500 SERVER_MISCONFIGURED`; JSON bodies are strictly bounded (`32 KiB`).
 
 ---
 
-## License & Commercial Support
+## License
 
-MIT Open Source (`$0`). Managed Hosted Verify API (free up to `$10,000 USDC` cumulative verified GMV), commercial multi-seat licenses, and community sponsorship are available on the [ApexHive Labs Storefront](https://zerofiat-base-checkout-kit.apexhive-hq.workers.dev). Support: `apexhive.hq@proton.me`.
+MIT Open Source (`$0`). Support contact: `apexhive.hq@proton.me`.
+
+Optional Base USDC tips for MIT maintenance: `0x32eceaC45DBED9E555dAb80346aBd4Ab9C676206`

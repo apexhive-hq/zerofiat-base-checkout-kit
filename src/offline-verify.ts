@@ -11,8 +11,8 @@ function base64ToBytes(b64: string): Uint8Array<ArrayBuffer> {
 }
 
 function base64UrlDecode(b64url: string): Uint8Array<ArrayBuffer> {
-  const padded = b64url.replace(/-/g, '+').replace(/_/g, '/') +
-    '==='.slice((b64url.length + 3) % 4);
+  const padded =
+    b64url.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((b64url.length + 3) % 4);
   return base64ToBytes(padded);
 }
 
@@ -24,7 +24,8 @@ function utf8Bytes(str: string): Uint8Array<ArrayBuffer> {
 }
 
 /**
- * Portable WebCrypto Ed25519 offline license verifier (works in Cloudflare Workers, Node >=20, and browsers).
+ * Portable WebCrypto Ed25519 offline receipt/attestation verifier
+ * (works in Cloudflare Workers, Node >=20, and browsers).
  */
 export async function verifyLicenseTokenOffline(
   token: string,
@@ -37,7 +38,7 @@ export async function verifyLicenseTokenOffline(
 ): Promise<{ valid: boolean; reason?: string; payload?: LicensePayload }> {
   const trimmed = token.trim();
   if (!trimmed.startsWith(options.expectedPrefix)) {
-    return { valid: false, reason: 'Invalid license token prefix.' };
+    return { valid: false, reason: 'Invalid certificate token prefix.' };
   }
 
   const parts = trimmed.slice(options.expectedPrefix.length).split('.');
@@ -71,16 +72,16 @@ export async function verifyLicenseTokenOffline(
     if (
       payload.v !== 1 ||
       payload.product !== options.expectedProduct ||
-      (payload.tier !== 'supporter' && payload.tier !== 'team' && payload.tier !== 'solo') ||
+      payload.tier !== 'standard' ||
       !/^0x[0-9a-fA-F]{40}$/.test(payload.payer) ||
       !/^0x[0-9a-fA-F]{64}$/.test(payload.txHash)
     ) {
-      return { valid: false, reason: 'Invalid license payload fields.' };
+      return { valid: false, reason: 'Invalid certificate payload fields.' };
     }
 
     const now = options.nowMs ?? Date.now();
     if (payload.expiresAt !== null && now > payload.expiresAt) {
-      return { valid: false, reason: 'License token expired.', payload };
+      return { valid: false, reason: 'Certificate token expired.', payload };
     }
 
     return { valid: true, payload };

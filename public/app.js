@@ -23,15 +23,11 @@
   const quotaResult = document.getElementById('quota-result');
 
   let activeNonce = '';
-  let cachedTiers = {
-    supporter: { usdc: '5', atomic: '5000000' },
-    team: { usdc: '49', atomic: '49000000' }
-  };
+  let checkoutDemo = { usdc: '1', atomic: '1000000' };
 
   function updateWalletPayLabel() {
     if (!walletPayBtn) return;
-    const t = cachedTiers[tierSelect.value] || cachedTiers.supporter;
-    walletPayBtn.textContent = `Pay ${t.usdc} USDC with Wallet`;
+    walletPayBtn.textContent = `Pay ${checkoutDemo.usdc} USDC with Wallet`;
   }
 
   function revealWalletButtonsIfInjected() {
@@ -75,25 +71,15 @@
       const cfg = await res.json();
       if (cfg.payToAddress) payToEl.textContent = cfg.payToAddress;
       if (cfg.usdcContract) usdcEl.textContent = cfg.usdcContract;
-      if (cfg.tiers) {
-        cachedTiers = cfg.tiers;
+      if (cfg.checkoutDemo) {
+        checkoutDemo = cfg.checkoutDemo;
         updateWalletPayLabel();
       }
       if (cfg.selfCustodyWarning) warningEl.textContent = cfg.selfCustodyWarning;
-      if (cfg.optionalRails) {
-        const sol = document.getElementById('sol-address');
-        const btc = document.getElementById('btc-address');
-        const tron = document.getElementById('tron-address');
-        if (sol && cfg.optionalRails.solanaUsdc) sol.textContent = cfg.optionalRails.solanaUsdc;
-        if (btc && cfg.optionalRails.bitcoin) btc.textContent = cfg.optionalRails.bitcoin;
-        if (tron && cfg.optionalRails.tronTrxUsdt) tron.textContent = cfg.optionalRails.tronTrxUsdt;
-      }
     } catch {
       // Fallback defaults stay visible
     }
   }
-
-  tierSelect.addEventListener('change', updateWalletPayLabel);
 
   if (checkQuotaBtn && quotaInput && quotaResult) {
     checkQuotaBtn.addEventListener('click', async () => {
@@ -107,15 +93,15 @@
         const res = await fetch(`/api/hosted/quota/${encodeURIComponent(addr)}`);
         const data = await res.json();
         if (!res.ok) {
-          quotaResult.textContent = data.message || data.error || 'Quota lookup failed.';
+          quotaResult.textContent = data.message || data.error || 'Stats lookup failed.';
           quotaResult.hidden = false;
           return;
         }
         quotaResult.textContent =
-          `Verified GMV: ${formatAtomicUsdc(data.gmvAtomic)} | Free Remaining: ${formatAtomicUsdc(data.freeRemainingAtomic)} of ${formatAtomicUsdc(data.freeQuotaAtomic)} | Pro Unlocked: ${data.proUnlocked ? 'Yes' : 'No'}`;
+          `Verified GMV: ${formatAtomicUsdc(data.gmvAtomic)} | Rail Mode: Unlimited Free MIT`;
         quotaResult.hidden = false;
       } catch (err) {
-        quotaResult.textContent = 'Network error checking quota: ' + (err.message || String(err));
+        quotaResult.textContent = 'Network error checking stats: ' + (err.message || String(err));
         quotaResult.hidden = false;
       }
     });
@@ -158,17 +144,16 @@
           }
         }
 
-        const t = cachedTiers[tierSelect.value] || cachedTiers.supporter;
         const payTo = payToEl.textContent.trim();
         const usdcAddr = usdcEl.textContent.trim();
-        const data = encodeErc20Transfer(payTo, t.atomic);
+        const data = encodeErc20Transfer(payTo, checkoutDemo.atomic);
         const txHash = await window.ethereum.request({
           method: 'eth_sendTransaction',
           params: [{ from, to: usdcAddr, data, value: '0x0' }]
         });
         txInput.value = txHash;
         if (walletPayStatus) {
-          walletPayStatus.textContent = `Submitted ${txHash}. Wait for confirmations, then click "1. Generate EIP-191 Challenge".`;
+          walletPayStatus.textContent = `Submitted ${txHash}. Wait for confirmations, then click "1. Generate Ownership Challenge".`;
           walletPayStatus.hidden = false;
         }
       } catch (err) {
@@ -192,7 +177,7 @@
   challengeBtn.addEventListener('click', async () => {
     clearError();
     const txHash = txInput.value.trim();
-    const tier = tierSelect.value;
+    const tier = tierSelect ? tierSelect.value : 'standard';
     if (!/^0x[0-9a-fA-F]{64}$/.test(txHash)) {
       showError('Enter a valid 0x-prefixed 64-character Base transaction hash first.');
       return;
@@ -243,10 +228,10 @@
 
     const txHash = txInput.value.trim();
     const signature = sigInput.value.trim();
-    const tier = tierSelect.value;
+    const tier = tierSelect ? tierSelect.value : 'standard';
 
     if (!activeNonce) {
-      showError('Generate an EIP-191 challenge first.');
+      showError('Generate an ownership challenge first.');
       return;
     }
 

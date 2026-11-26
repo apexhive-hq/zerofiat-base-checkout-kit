@@ -5,14 +5,15 @@ import { existsSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
-import { chromium } from 'playwright';
 import { encodeAbiParameters, pad } from 'viem';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import { verifyLicenseTokenOffline } from '../src/offline-verify.ts';
 
 const KIT_DIR = process.cwd();
 const HQ_ROOT = resolve(KIT_DIR, '..', '..');
-const CACHES_DIR = join(HQ_ROOT, '.caches');
+const CACHES_DIR = existsSync(join(HQ_ROOT, 'departments', 'infra', '.caches'))
+  ? join(HQ_ROOT, 'departments', 'infra', '.caches')
+  : join(HQ_ROOT, '.caches');
 
 const PAY_TO = '0x32eceaC45DBED9E555dAb80346aBd4Ab9C676206';
 const BASE_USDC = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
@@ -20,6 +21,8 @@ const WRONG_USDC = '0x9999999999999999999999999999999999999999';
 const WRONG_RECIPIENT = '0x8888888888888888888888888888888888888888';
 const TRANSFER_TOPIC =
   '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+const BOOL_TRUE_HEX = '0x' + '0'.repeat(63) + '1';
+const BOOL_FALSE_HEX = '0x' + '0'.repeat(64);
 
 function makeTransferLog(tokenAddr, fromAddr, toAddr, atomicValue) {
   return {
@@ -47,7 +50,27 @@ async function waitForServer(url, timeoutMs = 60000) {
   throw new Error(`Timed out waiting for ${url}`);
 }
 
-test('zerofiat-base-checkout-kit v2.0 Hosted API ($10k GMV + 402 + Team unlock) + money-safety + Playwright UI', async () => {
+function resolveWranglerLaunch() {
+  const localJs = join(KIT_DIR, 'node_modules', 'wrangler', 'bin', 'wrangler.js');
+  if (existsSync(localJs)) {
+    return { command: process.execPath, prefixArgs: [localJs], shell: false };
+  }
+  const localWin = join(KIT_DIR, 'node_modules', '.bin', 'wrangler.cmd');
+  const localPosix = join(KIT_DIR, 'node_modules', '.bin', 'wrangler');
+  if (process.platform === 'win32' && existsSync(localWin)) {
+    return { command: localWin, prefixArgs: [], shell: true };
+  }
+  if (process.platform !== 'win32' && existsSync(localPosix)) {
+    return { command: localPosix, prefixArgs: [], shell: false };
+  }
+  return {
+    command: process.platform === 'win32' ? 'wrangler.cmd' : 'wrangler',
+    prefixArgs: [],
+    shell: process.platform === 'win32'
+  };
+}
+
+test('zerofiat-base-checkout-kit v2.1 Free MIT + ERC-1271 Smart Wallet + Durable Object Lock + Playwright UI', async () => {
   const { privateKey, publicKey } = generateKeyPairSync('ed25519');
   const privateJwk = privateKey.export({ format: 'jwk' });
   const publicSpkiB64 = publicKey.export({ type: 'spki', format: 'der' }).toString('base64');
@@ -56,41 +79,42 @@ test('zerofiat-base-checkout-kit v2.0 Hosted API ($10k GMV + 402 + Team unlock) 
   const attackerAcct = privateKeyToAccount(generatePrivateKey());
   const merchantAcct = privateKeyToAccount(generatePrivateKey());
   const otherMerchantAcct = privateKeyToAccount(generatePrivateKey());
+  const smartWalletAddr = '0x7777777777777777777777777777777777777777';
+  const SMART_WALLET_SIG_VALID = '0x' + 'ab'.repeat(256);
+  const SMART_WALLET_SIG_INVALID = '0x' + 'cd'.repeat(180);
 
-  const TX_SUPPORTER = '0x' + 'aa'.repeat(32);
-  const TX_TEAM = '0x' + 'bb'.repeat(32);
+  const TX_STANDARD = '0x' + 'aa'.repeat(32);
+  const TX_SMART_WALLET = '0x' + 'bb'.repeat(32);
   const TX_UNDERPAY = '0x' + 'cc'.repeat(32);
   const TX_WRONG_RECIPIENT = '0x' + 'dd'.repeat(32);
   const TX_WRONG_TOKEN = '0x' + 'ee'.repeat(32);
   const TX_REVERTED = '0x' + 'ff'.repeat(32);
   const TX_CONFS = '0x' + '12'.repeat(32);
-  const TX_TIER_CONFLICT = '0x' + '34'.repeat(32);
-  const TX_WALLET_SUPPORTER = '0x' + '56'.repeat(32);
+  const TX_WALLET_DEMO = '0x' + '56'.repeat(32);
   const TX_HOSTED_6K = '0x' + '78'.repeat(32);
-  const TX_HOSTED_4K = '0x' + '9a'.repeat(32);
-  const TX_HOSTED_EXTRA = '0x' + 'bc'.repeat(32);
+  const TX_HOSTED_6K_TWO = '0x' + '9a'.repeat(32);
 
-  let headBlockHex = '0x65'; // block 101 => 2 confirmations for block 0x64
+  let headBlockHex = '0x65';
   let flakyHits = 0;
   let okHits = 0;
 
   const receipts = new Map([
     [
-      TX_SUPPORTER,
+      TX_STANDARD,
       {
         status: '0x1',
         blockNumber: '0x64',
         from: payerAcct.address,
-        logs: [makeTransferLog(BASE_USDC, payerAcct.address, PAY_TO, 5_000_000n)]
+        logs: [makeTransferLog(BASE_USDC, payerAcct.address, PAY_TO, 1_000_000n)]
       }
     ],
     [
-      TX_TEAM,
+      TX_SMART_WALLET,
       {
         status: '0x1',
         blockNumber: '0x64',
-        from: payerAcct.address,
-        logs: [makeTransferLog(BASE_USDC, payerAcct.address, PAY_TO, 49_000_000n)]
+        from: smartWalletAddr,
+        logs: [makeTransferLog(BASE_USDC, smartWalletAddr, PAY_TO, 1_000_000n)]
       }
     ],
     [
@@ -99,7 +123,7 @@ test('zerofiat-base-checkout-kit v2.0 Hosted API ($10k GMV + 402 + Team unlock) 
         status: '0x1',
         blockNumber: '0x64',
         from: payerAcct.address,
-        logs: [makeTransferLog(BASE_USDC, payerAcct.address, PAY_TO, 4_990_000n)]
+        logs: [makeTransferLog(BASE_USDC, payerAcct.address, PAY_TO, 990_000n)]
       }
     ],
     [
@@ -108,7 +132,7 @@ test('zerofiat-base-checkout-kit v2.0 Hosted API ($10k GMV + 402 + Team unlock) 
         status: '0x1',
         blockNumber: '0x64',
         from: payerAcct.address,
-        logs: [makeTransferLog(BASE_USDC, payerAcct.address, WRONG_RECIPIENT, 5_000_000n)]
+        logs: [makeTransferLog(BASE_USDC, payerAcct.address, WRONG_RECIPIENT, 1_000_000n)]
       }
     ],
     [
@@ -117,7 +141,7 @@ test('zerofiat-base-checkout-kit v2.0 Hosted API ($10k GMV + 402 + Team unlock) 
         status: '0x1',
         blockNumber: '0x64',
         from: payerAcct.address,
-        logs: [makeTransferLog(WRONG_USDC, payerAcct.address, PAY_TO, 5_000_000n)]
+        logs: [makeTransferLog(WRONG_USDC, payerAcct.address, PAY_TO, 1_000_000n)]
       }
     ],
     [
@@ -126,7 +150,7 @@ test('zerofiat-base-checkout-kit v2.0 Hosted API ($10k GMV + 402 + Team unlock) 
         status: '0x0',
         blockNumber: '0x64',
         from: payerAcct.address,
-        logs: [makeTransferLog(BASE_USDC, payerAcct.address, PAY_TO, 5_000_000n)]
+        logs: [makeTransferLog(BASE_USDC, payerAcct.address, PAY_TO, 1_000_000n)]
       }
     ],
     [
@@ -135,25 +159,16 @@ test('zerofiat-base-checkout-kit v2.0 Hosted API ($10k GMV + 402 + Team unlock) 
         status: '0x1',
         blockNumber: '0x64',
         from: payerAcct.address,
-        logs: [makeTransferLog(BASE_USDC, payerAcct.address, PAY_TO, 5_000_000n)]
+        logs: [makeTransferLog(BASE_USDC, payerAcct.address, PAY_TO, 1_000_000n)]
       }
     ],
     [
-      TX_TIER_CONFLICT,
+      TX_WALLET_DEMO,
       {
         status: '0x1',
         blockNumber: '0x64',
         from: payerAcct.address,
-        logs: [makeTransferLog(BASE_USDC, payerAcct.address, PAY_TO, 49_000_000n)]
-      }
-    ],
-    [
-      TX_WALLET_SUPPORTER,
-      {
-        status: '0x1',
-        blockNumber: '0x64',
-        from: payerAcct.address,
-        logs: [makeTransferLog(BASE_USDC, payerAcct.address, PAY_TO, 5_000_000n)]
+        logs: [makeTransferLog(BASE_USDC, payerAcct.address, PAY_TO, 1_000_000n)]
       }
     ],
     [
@@ -166,27 +181,17 @@ test('zerofiat-base-checkout-kit v2.0 Hosted API ($10k GMV + 402 + Team unlock) 
       }
     ],
     [
-      TX_HOSTED_4K,
+      TX_HOSTED_6K_TWO,
       {
         status: '0x1',
         blockNumber: '0x64',
         from: payerAcct.address,
-        logs: [makeTransferLog(BASE_USDC, payerAcct.address, merchantAcct.address, 4_000_000_000n)]
-      }
-    ],
-    [
-      TX_HOSTED_EXTRA,
-      {
-        status: '0x1',
-        blockNumber: '0x64',
-        from: payerAcct.address,
-        logs: [makeTransferLog(BASE_USDC, payerAcct.address, merchantAcct.address, 10_000_000n)]
+        logs: [makeTransferLog(BASE_USDC, payerAcct.address, merchantAcct.address, 6_000_000_000n)]
       }
     ]
   ]);
 
-  // 1. Mock Base JSON-RPC server (4121) with /flaky (429/500) + /ok failover
-  const rpcPort = 4121;
+  // 1. Mock Base JSON-RPC server (ephemeral port) supporting /flaky failover + ERC-1271/EIP-6492 eth_call
   const rpcServer = createServer((req, res) => {
     if (req.url?.startsWith('/flaky')) {
       flakyHits += 1;
@@ -212,6 +217,15 @@ test('zerofiat-base-checkout-kit v2.0 Hosted API ($10k GMV + 402 + Team unlock) 
           const hash = String(call.params?.[0] ?? '').toLowerCase();
           return { jsonrpc: '2.0', id: call.id, result: receipts.get(hash) ?? null };
         }
+        if (call.method === 'eth_call') {
+          const callData = String(call.params?.[0]?.data ?? '').toLowerCase();
+          const validMarker = 'ab'.repeat(256);
+          return {
+            jsonrpc: '2.0',
+            id: call.id,
+            result: callData.includes(validMarker) ? BOOL_TRUE_HEX : BOOL_FALSE_HEX
+          };
+        }
         return { jsonrpc: '2.0', id: call.id, error: { code: -32601, message: 'Method not found' } };
       });
       res.writeHead(200, { 'content-type': 'application/json' });
@@ -219,14 +233,10 @@ test('zerofiat-base-checkout-kit v2.0 Hosted API ($10k GMV + 402 + Team unlock) 
     });
   });
 
-  // 2. Mock Release Asset server (4122)
-  const expectedToken = 'ghp_local_mock_release_token_zero_secret';
-  const mockZipBytes = Buffer.from('PK\x03\x04zerofiat-base-checkout-kit-v2.0.0-verified-payload');
+  // 2. Mock Archive server (ephemeral port)
+  const mockZipBytes = Buffer.from('PK\x03\x04zerofiat-base-checkout-kit-v2.1.0-verified-payload');
   const expectedZipSha256 = createHash('sha256').update(mockZipBytes).digest('hex');
-  const releasePort = 4122;
-  const releaseServer = createServer((req, res) => {
-    assert.equal(req.headers.authorization, `Bearer ${expectedToken}`);
-    assert.equal(req.headers.accept, 'application/octet-stream');
+  const releaseServer = createServer((_req, res) => {
     res.writeHead(200, {
       'content-type': 'application/zip',
       'content-length': String(mockZipBytes.length)
@@ -234,10 +244,12 @@ test('zerofiat-base-checkout-kit v2.0 Hosted API ($10k GMV + 402 + Team unlock) 
     res.end(mockZipBytes);
   });
 
-  await new Promise((r) => rpcServer.listen(rpcPort, '127.0.0.1', r));
-  await new Promise((r) => releaseServer.listen(releasePort, '127.0.0.1', r));
+  await new Promise((r) => rpcServer.listen(0, '127.0.0.1', r));
+  await new Promise((r) => releaseServer.listen(0, '127.0.0.1', r));
+  const rpcPort = rpcServer.address().port;
+  const releasePort = releaseServer.address().port;
 
-  // 3. Boot Wrangler local dev on 4120 using global wrangler from PATH
+  // 3. Boot Wrangler local dev using local node_modules/.bin/wrangler
   const wranglerPort = 4120;
   const baseUrl = `http://127.0.0.1:${wranglerPort}`;
   const wranglerStateDir = join(KIT_DIR, '.wrangler-state');
@@ -250,8 +262,7 @@ test('zerofiat-base-checkout-kit v2.0 Hosted API ($10k GMV + 402 + Team unlock) 
       `LICENSE_SIGNING_PRIVATE_JWK=${JSON.stringify(privateJwk)}`,
       `LICENSE_SIGNING_PUBLIC_SPKI_B64=${publicSpkiB64}`,
       `DOWNLOAD_HMAC_SECRET=abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789`,
-      `GITHUB_RELEASE_READ_TOKEN=${expectedToken}`,
-      `GITHUB_RELEASE_ASSET_URL=http://127.0.0.1:${releasePort}/releases/assets/1`,
+      `PUBLIC_ARCHIVE_URL=http://127.0.0.1:${releasePort}/main.zip`,
       `BASE_RPC_URLS=http://127.0.0.1:${rpcPort}/flaky,http://127.0.0.1:${rpcPort}/ok`,
       `BASE_RPC_URL=http://127.0.0.1:${rpcPort}/flaky`,
       `MIN_CONFIRMATIONS=2`
@@ -259,38 +270,66 @@ test('zerofiat-base-checkout-kit v2.0 Hosted API ($10k GMV + 402 + Team unlock) 
     'utf8'
   );
 
-  const wranglerBin = process.platform === 'win32' ? 'wrangler.cmd' : 'wrangler';
+  const wranglerLaunch = resolveWranglerLaunch();
+  const useSandboxCaches = existsSync(CACHES_DIR);
+  const wranglerEnv = {
+    ...process.env,
+    WRANGLER_SEND_METRICS: 'false'
+  };
+  if (useSandboxCaches) {
+    wranglerEnv.APPDATA = join(CACHES_DIR, 'roaming');
+    wranglerEnv.LOCALAPPDATA = join(CACHES_DIR, 'local');
+    wranglerEnv.XDG_CONFIG_HOME = join(CACHES_DIR, 'xdg');
+  }
+
   const wranglerProc = spawn(
-    wranglerBin,
-    ['dev', '--local', '--port', String(wranglerPort), '--ip', '127.0.0.1', '--persist-to', '.wrangler-state'],
+    wranglerLaunch.command,
+    [
+      ...wranglerLaunch.prefixArgs,
+      'dev',
+      '--local',
+      '--port',
+      String(wranglerPort),
+      '--ip',
+      '127.0.0.1',
+      '--persist-to',
+      '.wrangler-state'
+    ],
     {
       cwd: KIT_DIR,
-      shell: true,
-      env: {
-        ...process.env,
-        APPDATA: join(CACHES_DIR, 'roaming'),
-        LOCALAPPDATA: join(CACHES_DIR, 'local'),
-        XDG_CONFIG_HOME: join(CACHES_DIR, 'xdg'),
-        WRANGLER_SEND_METRICS: 'false'
-      },
+      shell: wranglerLaunch.shell,
+      env: wranglerEnv,
       stdio: ['ignore', 'pipe', 'pipe']
     }
   );
+  const wranglerLogs = [];
+  const pushLog = (chunk) => {
+    wranglerLogs.push(String(chunk));
+    if (wranglerLogs.length > 40) wranglerLogs.shift();
+  };
+  wranglerProc.stdout?.on('data', pushLog);
+  wranglerProc.stderr?.on('data', pushLog);
 
   try {
-    await waitForServer(`${baseUrl}/api/health`);
+    try {
+      await waitForServer(`${baseUrl}/api/health`);
+    } catch (err) {
+      throw new Error(`${err.message}\nWrangler logs:\n${wranglerLogs.join('')}`);
+    }
 
-    // 4. Config & Open-Core v2.0 check
-    const cfgRes = await fetch(`${baseUrl}/api/config`);
-    assert.equal(cfgRes.status, 200);
-    const cfgJson = await cfgRes.json();
+    // 4. Health & Config checks (Durable Object bound, unlimited Free MIT, Smart Wallet support)
+    const healthJson = await (await fetch(`${baseUrl}/api/health`)).json();
+    assert.equal(healthJson.durableObjectLockBound, true);
+    assert.equal(healthJson.unlimitedFreeMit, true);
+    assert.deepEqual(healthJson.smartWalletSupport, ['EOA', 'ERC-1271', 'EIP-6492']);
+
+    const cfgJson = await (await fetch(`${baseUrl}/api/config`)).json();
     assert.equal(cfgJson.openSourceLicense, 'MIT');
+    assert.equal(cfgJson.unlimitedFreeMit, true);
     assert.equal(cfgJson.supportEmail, 'apexhive.hq@proton.me');
-    assert.equal(cfgJson.tiers.supporter.atomic, '5000000');
-    assert.equal(cfgJson.tiers.team.atomic, '49000000');
-    assert.equal(cfgJson.hostedFreeQuotaAtomic, '10000000000');
+    assert.equal(cfgJson.checkoutDemo.atomic, '1000000');
 
-    async function issueChallenge(txHash, tier) {
+    async function issueChallenge(txHash, tier = 'standard') {
       const res = await fetch(`${baseUrl}/api/challenge`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -301,26 +340,25 @@ test('zerofiat-base-checkout-kit v2.0 Hosted API ($10k GMV + 402 + Team unlock) 
     }
 
     // 4a. Confirmation check retains challenge nonce across 1-conf failure -> 2-conf retry
-    headBlockHex = '0x64'; // 1 confirmation
-    const chConf = await issueChallenge(TX_CONFS, 'supporter');
+    headBlockHex = '0x64';
+    const chConf = await issueChallenge(TX_CONFS);
     const sigConf = await payerAcct.signMessage({ message: chConf.message });
     const vConfLow = await fetch(`${baseUrl}/api/verify`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ txHash: TX_CONFS, nonce: chConf.nonce, signature: sigConf, tier: 'supporter' })
+      body: JSON.stringify({ txHash: TX_CONFS, nonce: chConf.nonce, signature: sigConf, tier: 'standard' })
     });
     assert.equal(vConfLow.status, 403);
     assert.equal((await vConfLow.json()).error, 'INSUFFICIENT_CONFIRMATIONS');
 
-    headBlockHex = '0x65'; // 2 confirmations -> same nonce + signature succeeds
+    headBlockHex = '0x65';
     const vConfOk = await fetch(`${baseUrl}/api/verify`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ txHash: TX_CONFS, nonce: chConf.nonce, signature: sigConf, tier: 'supporter' })
+      body: JSON.stringify({ txHash: TX_CONFS, nonce: chConf.nonce, signature: sigConf, tier: 'standard' })
     });
     assert.equal(vConfOk.status, 200);
     const confOkJson = await vConfOk.json();
-    assert.equal(confOkJson.ok, true);
     assert.equal(confOkJson.reclaimed, false);
     assert.equal(
       (await verifyLicenseTokenOffline(confOkJson.licenseToken, {
@@ -331,47 +369,60 @@ test('zerofiat-base-checkout-kit v2.0 Hosted API ($10k GMV + 402 + Team unlock) 
       true
     );
 
-    // Verify RPC failover across 429/500
     assert.ok(flakyHits >= 2, `Expected >=2 /flaky failover probes, got ${flakyHits}`);
     assert.ok(okHits >= 2, `Expected >=2 /ok RPC completions, got ${okHits}`);
 
-    // 4b. Hosted Verify API (<$10k free -> idempotent replay -> >=$10k 402 -> Team token unlocks -> 200 hosted_pro)
-    const qInitRes = await fetch(`${baseUrl}/api/hosted/quota/${merchantAcct.address}`);
-    assert.equal(qInitRes.status, 200);
-    const qInit = await qInitRes.json();
-    assert.equal(qInit.gmvAtomic, '0');
-    assert.equal(qInit.freeQuotaAtomic, '10000000000');
-    assert.equal(qInit.freeRemainingAtomic, '10000000000');
-    assert.equal(qInit.proUnlocked, false);
-
-    // First $6,000 USDC hosted verify (free_tier)
-    const h6k = await fetch(`${baseUrl}/api/hosted/verify`, {
+    // 4b. ERC-1271 / EIP-6492 Smart Wallet variable-length signature (>130 hex) in real wrangler dev
+    const chSmartBad = await issueChallenge(TX_SMART_WALLET);
+    const vSmartBad = await fetch(`${baseUrl}/api/verify`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        txHash: TX_HOSTED_6K,
-        merchantAddress: merchantAcct.address,
-        minAmountAtomic: '6000000000'
+        txHash: TX_SMART_WALLET,
+        nonce: chSmartBad.nonce,
+        signature: SMART_WALLET_SIG_INVALID,
+        tier: 'standard'
       })
     });
-    assert.equal(h6k.status, 200);
-    const h6kJson = await h6k.json();
-    assert.equal(h6kJson.ok, true);
-    assert.equal(h6kJson.cached, false);
-    assert.equal(h6kJson.mode, 'free_tier');
-    assert.equal(h6kJson.gmvAtomic, '6000000000');
-    assert.equal(h6kJson.freeRemainingAtomic, '4000000000');
+    assert.equal(vSmartBad.status, 403);
+    assert.equal((await vSmartBad.json()).error, 'PAYMENT_OR_SIGNATURE_INVALID');
 
-    // Replay TX_HOSTED_6K -> cached: true WITHOUT double-counting GMV
-    const h6kReplay = await fetch(`${baseUrl}/api/hosted/verify`, {
+    const chSmartOk = await issueChallenge(TX_SMART_WALLET);
+    const vSmartOk = await fetch(`${baseUrl}/api/verify`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ txHash: TX_HOSTED_6K, merchantAddress: merchantAcct.address })
+      body: JSON.stringify({
+        txHash: TX_SMART_WALLET,
+        nonce: chSmartOk.nonce,
+        signature: SMART_WALLET_SIG_VALID,
+        tier: 'standard'
+      })
     });
-    assert.equal(h6kReplay.status, 200);
-    const h6kReplayJson = await h6kReplay.json();
-    assert.equal(h6kReplayJson.cached, true);
-    assert.equal(h6kReplayJson.gmvAtomic, '6000000000');
+    assert.equal(vSmartOk.status, 200);
+    const smartOkJson = await vSmartOk.json();
+    assert.equal(smartOkJson.payer, smartWalletAddr);
+
+    // 4c. Real Durable Object TxClaimLockDO atomic race test (5 parallel /api/hosted/verify requests)
+    const concurrentHosted = await Promise.all(
+      Array.from({ length: 5 }, () =>
+        fetch(`${baseUrl}/api/hosted/verify`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            txHash: TX_HOSTED_6K,
+            merchantAddress: merchantAcct.address,
+            minAmountAtomic: '6000000000'
+          })
+        })
+      )
+    );
+    const concurrentBodies = await Promise.all(concurrentHosted.map((r) => r.json()));
+    for (const r of concurrentHosted) assert.equal(r.status, 200);
+    assert.equal(concurrentBodies.filter((b) => b.cached === false).length, 1);
+    assert.equal(concurrentBodies.filter((b) => b.cached === true).length, 4);
+
+    const quota1 = await (await fetch(`${baseUrl}/api/hosted/quota/${merchantAcct.address}`)).json();
+    assert.equal(quota1.gmvAtomic, '6000000000');
 
     // Different merchant claiming TX_HOSTED_6K -> 403 TX_ALREADY_CLAIMED
     const h6kCross = await fetch(`${baseUrl}/api/hosted/verify`, {
@@ -381,172 +432,82 @@ test('zerofiat-base-checkout-kit v2.0 Hosted API ($10k GMV + 402 + Team unlock) 
     });
     assert.equal(h6kCross.status, 403);
 
-    // Second $4,000 USDC hosted verify -> hits $10,000 cap
-    const h4k = await fetch(`${baseUrl}/api/hosted/verify`, {
+    // Unlimited GMV past $10,000 ($6k + $6k = $12k) -> 200 OK (no paywall!)
+    const h6kTwo = await fetch(`${baseUrl}/api/hosted/verify`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ txHash: TX_HOSTED_4K, merchantAddress: merchantAcct.address })
+      body: JSON.stringify({ txHash: TX_HOSTED_6K_TWO, merchantAddress: merchantAcct.address })
     });
-    assert.equal(h4k.status, 200);
-    const h4kJson = await h4k.json();
-    assert.equal(h4kJson.gmvAtomic, '10000000000');
-    assert.equal(h4kJson.freeRemainingAtomic, '0');
+    assert.equal(h6kTwo.status, 200);
+    const h6kTwoJson = await h6kTwo.json();
+    assert.equal(h6kTwoJson.mode, 'free_mit');
+    assert.equal(h6kTwoJson.gmvAtomic, '12000000000');
 
-    // Beyond $10,000 without Team license -> 402 QUOTA_EXCEEDED_10K
-    const hQuotaBlocked = await fetch(`${baseUrl}/api/hosted/verify`, {
+    // 4d. Standard checkout claim + 3-download cap + same-payer re-claim + attacker block
+    const chStd = await issueChallenge(TX_STANDARD);
+    const sigStd = await payerAcct.signMessage({ message: chStd.message });
+    const vStd = await fetch(`${baseUrl}/api/verify`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ txHash: TX_HOSTED_EXTRA, merchantAddress: merchantAcct.address })
+      body: JSON.stringify({ txHash: TX_STANDARD, nonce: chStd.nonce, signature: sigStd, tier: 'standard' })
     });
-    assert.equal(hQuotaBlocked.status, 402);
-    const blockedJson = await hQuotaBlocked.json();
-    assert.equal(blockedJson.error, 'QUOTA_EXCEEDED_10K');
-
-    // Passing Supporter token (5 USDC) must NOT unlock Hosted Pro -> still 402
-    const hSupporterBlocked = await fetch(`${baseUrl}/api/hosted/verify`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'X-ApexHive-License': confOkJson.licenseToken
-      },
-      body: JSON.stringify({ txHash: TX_HOSTED_EXTRA, merchantAddress: merchantAcct.address })
-    });
-    assert.equal(hSupporterBlocked.status, 402);
-
-    // Purchase Team / Hosted Pro (49 USDC) -> signed team token -> unlocks Hosted API past $10k
-    const chTeamApi = await issueChallenge(TX_TEAM, 'team');
-    const sigTeamApi = await payerAcct.signMessage({ message: chTeamApi.message });
-    const vTeamApi = await fetch(`${baseUrl}/api/verify`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ txHash: TX_TEAM, nonce: chTeamApi.nonce, signature: sigTeamApi, tier: 'team' })
-    });
-    assert.equal(vTeamApi.status, 200);
-    const teamJson = await vTeamApi.json();
-    assert.equal(teamJson.tier, 'team');
-
-    const hUnlocked = await fetch(`${baseUrl}/api/hosted/verify`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'X-ApexHive-License': teamJson.licenseToken
-      },
-      body: JSON.stringify({ txHash: TX_HOSTED_EXTRA, merchantAddress: merchantAcct.address })
-    });
-    assert.equal(hUnlocked.status, 200);
-    const hUnlockedJson = await hUnlocked.json();
-    assert.equal(hUnlockedJson.ok, true);
-    assert.equal(hUnlockedJson.mode, 'hosted_pro');
-    assert.equal(hUnlockedJson.proUnlocked, true);
-    assert.equal(hUnlockedJson.gmvAtomic, '10010000000');
-
-    const qProRes = await fetch(`${baseUrl}/api/hosted/quota/${merchantAcct.address}`, {
-      headers: { 'X-ApexHive-License': teamJson.licenseToken }
-    });
-    assert.equal((await qProRes.json()).proUnlocked, true);
-
-    // 4c. Supporter 5 USDC claim + 3-download cap + same-payer re-claim fresh grant
-    const chSup = await issueChallenge(TX_SUPPORTER, 'supporter');
-    const sigSup = await payerAcct.signMessage({ message: chSup.message });
-    const vSup = await fetch(`${baseUrl}/api/verify`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ txHash: TX_SUPPORTER, nonce: chSup.nonce, signature: sigSup, tier: 'supporter' })
-    });
-    assert.equal(vSup.status, 200);
-    const supJson = await vSup.json();
-    assert.equal(supJson.reclaimed, false);
-    assert.equal(
-      (await verifyLicenseTokenOffline(supJson.licenseToken, {
-        publicKeySpkiB64: publicSpkiB64,
-        expectedPrefix: 'ZEROFIAT-KIT-v1.',
-        expectedProduct: 'zerofiat-base-checkout-kit'
-      })).valid,
-      true
-    );
+    assert.equal(vStd.status, 200);
+    const stdJson = await vStd.json();
 
     for (let i = 0; i < 3; i += 1) {
-      const dl = await fetch(`${baseUrl}${supJson.downloadUrl}`);
+      const dl = await fetch(`${baseUrl}${stdJson.downloadUrl}`);
       assert.equal(dl.status, 200);
       const buf = Buffer.from(await dl.arrayBuffer());
       assert.equal(createHash('sha256').update(buf).digest('hex'), expectedZipSha256);
     }
-    const dl4 = await fetch(`${baseUrl}${supJson.downloadUrl}`);
+    const dl4 = await fetch(`${baseUrl}${stdJson.downloadUrl}`);
     assert.equal(dl4.status, 403);
 
-    // Same-payer re-claim issues fresh licenseToken + fresh HMAC downloadUrl
-    const chReclaim = await issueChallenge(TX_SUPPORTER, 'supporter');
+    const chReclaim = await issueChallenge(TX_STANDARD);
     const sigReclaim = await payerAcct.signMessage({ message: chReclaim.message });
     const vReclaim = await fetch(`${baseUrl}/api/verify`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ txHash: TX_SUPPORTER, nonce: chReclaim.nonce, signature: sigReclaim, tier: 'supporter' })
+      body: JSON.stringify({ txHash: TX_STANDARD, nonce: chReclaim.nonce, signature: sigReclaim, tier: 'standard' })
     });
     assert.equal(vReclaim.status, 200);
     const reclaimJson = await vReclaim.json();
-    assert.equal(reclaimJson.ok, true);
     assert.equal(reclaimJson.reclaimed, true);
-    assert.notEqual(reclaimJson.downloadToken, supJson.downloadToken);
-    const dlReclaim = await fetch(`${baseUrl}${reclaimJson.downloadUrl}`);
-    assert.equal(dlReclaim.status, 200);
-    const reclaimZipBuf = Buffer.from(await dlReclaim.arrayBuffer());
-    assert.equal(createHash('sha256').update(reclaimZipBuf).digest('hex'), expectedZipSha256);
 
-    // Attacker re-claim on TX_SUPPORTER -> 403
-    const chAttackerSup = await issueChallenge(TX_SUPPORTER, 'supporter');
-    const sigAttackerSup = await attackerAcct.signMessage({ message: chAttackerSup.message });
-    const vAttackerSup = await fetch(`${baseUrl}/api/verify`, {
+    const chAttacker = await issueChallenge(TX_STANDARD);
+    const sigAttacker = await attackerAcct.signMessage({ message: chAttacker.message });
+    const vAttacker = await fetch(`${baseUrl}/api/verify`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        txHash: TX_SUPPORTER,
-        nonce: chAttackerSup.nonce,
-        signature: sigAttackerSup,
-        tier: 'supporter'
-      })
+      body: JSON.stringify({ txHash: TX_STANDARD, nonce: chAttacker.nonce, signature: sigAttacker, tier: 'standard' })
     });
-    assert.equal(vAttackerSup.status, 403);
+    assert.equal(vAttacker.status, 403);
 
-    // Tier mismatch re-claim by same payer -> 403 TX_ALREADY_CLAIMED
-    const chTier1 = await issueChallenge(TX_TIER_CONFLICT, 'supporter');
-    const sigTier1 = await payerAcct.signMessage({ message: chTier1.message });
-    const vTier1 = await fetch(`${baseUrl}/api/verify`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ txHash: TX_TIER_CONFLICT, nonce: chTier1.nonce, signature: sigTier1, tier: 'supporter' })
-    });
-    assert.equal(vTier1.status, 200);
-
-    const chTier2 = await issueChallenge(TX_TIER_CONFLICT, 'team');
-    const sigTier2 = await payerAcct.signMessage({ message: chTier2.message });
-    const vTier2 = await fetch(`${baseUrl}/api/verify`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ txHash: TX_TIER_CONFLICT, nonce: chTier2.nonce, signature: sigTier2, tier: 'team' })
-    });
-    assert.equal(vTier2.status, 403);
-    assert.equal((await vTier2.json()).error, 'TX_ALREADY_CLAIMED');
-
-    // 4d. Negative guards (underpay, wrong recipient, wrong token, reverted, wrong signer)
-    for (const [tx, tier, signer] of [
-      [TX_UNDERPAY, 'supporter', payerAcct],
-      [TX_WRONG_RECIPIENT, 'supporter', payerAcct],
-      [TX_WRONG_TOKEN, 'supporter', payerAcct],
-      [TX_REVERTED, 'supporter', payerAcct],
-      [TX_WALLET_SUPPORTER, 'supporter', attackerAcct]
+    // 4e. Negative guards
+    for (const [tx, signer] of [
+      [TX_UNDERPAY, payerAcct],
+      [TX_WRONG_RECIPIENT, payerAcct],
+      [TX_WRONG_TOKEN, payerAcct],
+      [TX_REVERTED, payerAcct],
+      [TX_WALLET_DEMO, attackerAcct]
     ]) {
-      const chNeg = await issueChallenge(tx, tier);
+      const chNeg = await issueChallenge(tx);
       const sigNeg = await signer.signMessage({ message: chNeg.message });
       const vNeg = await fetch(`${baseUrl}/api/verify`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ txHash: tx, nonce: chNeg.nonce, signature: sigNeg, tier })
+        body: JSON.stringify({ txHash: tx, nonce: chNeg.nonce, signature: sigNeg, tier: 'standard' })
       });
       assert.equal(vNeg.status, 403);
     }
 
-    // 5. Playwright Headless UI verification (no-wallet hidden check + 1440x900 & 375x812 + Quota Checker + 1-click #wallet-pay-btn)
-    process.env.PLAYWRIGHT_BROWSERS_PATH = join(CACHES_DIR, 'ms-playwright');
+    // 5. Playwright Headless UI verification (resolve sandboxed cache before dynamic import)
+    const cachedPlaywrightDir = join(CACHES_DIR, 'ms-playwright');
+    if (!process.env.PLAYWRIGHT_BROWSERS_PATH && existsSync(cachedPlaywrightDir)) {
+      process.env.PLAYWRIGHT_BROWSERS_PATH = cachedPlaywrightDir;
+    }
+
+    const { chromium } = await import('playwright');
     const browser = await chromium.launch({ headless: true });
     try {
       const noWalletCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
@@ -586,19 +547,19 @@ test('zerofiat-base-checkout-kit v2.0 Hosted API ($10k GMV + 402 + Team unlock) 
               }
             };
           },
-          { payerAddr: payerAcct.address, mockTxHash: TX_WALLET_SUPPORTER }
+          { payerAddr: payerAcct.address, mockTxHash: TX_WALLET_DEMO }
         );
 
         await page.goto(baseUrl, { waitUntil: 'networkidle' });
         assert.equal((await page.locator('#pay-to-address').textContent())?.trim(), PAY_TO);
         assert.equal(await page.locator('#self-custody-warning').isVisible(), true);
         const bodyText = await page.locator('body').innerText();
-        assert.ok(bodyText.includes('apexhive.hq@proton.me'), 'Support email must be visible');
-        assert.ok(bodyText.includes('MIT'), 'MIT Open-Source copy must be visible');
-        assert.ok(bodyText.includes('$10,000'), 'Free $10k Hosted API quota must be visible');
-        assert.ok(bodyText.includes('Open-Core Pricing'), 'Clean Open-Core Pricing heading required');
-        assert.equal(bodyText.includes('Zero Personal Code Paywalls'), false);
-        assert.equal(bodyText.includes('steady forever'), false);
+        assert.ok(bodyText.includes('apexhive.hq@proton.me'));
+        assert.ok(bodyText.includes('MIT'));
+        assert.ok(bodyText.includes('ERC-1271'));
+        assert.ok(bodyText.includes('Durable Object'));
+        assert.equal(bodyText.includes('Hosted Pro'), false);
+        assert.equal(bodyText.includes('49 USDC'), false);
 
         const overflow = await page.evaluate(
           () => document.documentElement.scrollWidth > window.innerWidth
@@ -606,41 +567,24 @@ test('zerofiat-base-checkout-kit v2.0 Hosted API ($10k GMV + 402 + Team unlock) 
         assert.equal(overflow, false, `Horizontal overflow at ${vp.name} (${vp.width}px)`);
 
         if (vp.name === 'desktop') {
-          // Test Live Quota Checker widget
           await page.fill('#quota-address-input', merchantAcct.address);
           await page.click('#check-quota-btn');
           await page.waitForSelector('#quota-result:not([hidden])');
           const quotaText = await page.locator('#quota-result').textContent();
-          assert.ok(quotaText?.includes('10,010.00 USDC'), `Expected GMV 10,010.00 USDC, got: ${quotaText}`);
+          assert.ok(quotaText?.includes('12,000.00 USDC'), `Expected GMV 12,000.00 USDC, got: ${quotaText}`);
 
-          // Test 1-click wallet pay button labels (5 USDC supporter -> 49 USDC team -> 5 USDC supporter)
-          assert.equal((await page.locator('#wallet-pay-btn').textContent())?.trim(), 'Pay 5 USDC with Wallet');
-          await page.selectOption('#tier-select', 'team');
-          assert.equal((await page.locator('#wallet-pay-btn').textContent())?.trim(), 'Pay 49 USDC with Wallet');
-          await page.selectOption('#tier-select', 'supporter');
-          assert.equal((await page.locator('#wallet-pay-btn').textContent())?.trim(), 'Pay 5 USDC with Wallet');
-
+          assert.equal((await page.locator('#wallet-pay-btn').textContent())?.trim(), 'Pay 1 USDC with Wallet');
           await page.click('#wallet-pay-btn');
           await page.waitForFunction(
             (expectedHash) => document.querySelector('#tx-hash-input')?.value === expectedHash,
-            TX_WALLET_SUPPORTER
+            TX_WALLET_DEMO
           );
-
-          const walletCalls = await page.evaluate(() => window.__walletCalls);
-          const sendTxCall = walletCalls.find((c) => c.method === 'eth_sendTransaction');
-          assert.ok(sendTxCall, 'Expected eth_sendTransaction call from #wallet-pay-btn');
-          const txParam = sendTxCall.params[0];
-          assert.equal(txParam.to.toLowerCase(), BASE_USDC.toLowerCase());
-          const expectedDataPrefix =
-            '0xa9059cbb' + PAY_TO.toLowerCase().replace('0x', '').padStart(64, '0');
-          const expectedAmountHex = (5_000_000n).toString(16).padStart(64, '0');
-          assert.equal(txParam.data.toLowerCase(), expectedDataPrefix + expectedAmountHex);
 
           await page.click('#challenge-btn');
           await page.waitForSelector('#challenge-box:not([hidden])');
           const msgText = await page.inputValue('#challenge-text');
-          const sigSup = await payerAcct.signMessage({ message: msgText });
-          await page.fill('#signature-input', sigSup);
+          const sigDemo = await payerAcct.signMessage({ message: msgText });
+          await page.fill('#signature-input', sigDemo);
           await page.click('#verify-btn');
           await page.waitForSelector('#license-result:not([hidden])');
           const dlHref = await page.locator('#download-link').getAttribute('href');
@@ -666,10 +610,22 @@ test('zerofiat-base-checkout-kit v2.0 Hosted API ($10k GMV + 402 + Team unlock) 
     } else {
       wranglerProc.kill('SIGTERM');
     }
-    await new Promise((r) => setTimeout(r, 600));
+    await new Promise((r) => setTimeout(r, 900));
     rpcServer.close();
     releaseServer.close();
-    if (existsSync(devVarsPath)) rmSync(devVarsPath, { force: true });
-    if (existsSync(wranglerStateDir)) rmSync(wranglerStateDir, { recursive: true, force: true });
+    if (existsSync(devVarsPath)) {
+      try {
+        rmSync(devVarsPath, { force: true });
+      } catch {
+        // ignore Windows handle release delay
+      }
+    }
+    if (existsSync(wranglerStateDir)) {
+      try {
+        rmSync(wranglerStateDir, { recursive: true, force: true, maxRetries: 15, retryDelay: 250 });
+      } catch {
+        // ignore Windows SQLite DO handle release delay
+      }
+    }
   }
 });

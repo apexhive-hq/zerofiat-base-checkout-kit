@@ -1,4 +1,5 @@
-import { verifyMessage } from 'viem';
+import { createPublicClient, custom } from 'viem';
+import { base } from 'viem/chains';
 
 const ERC20_TRANSFER_TOPIC =
   '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
@@ -75,7 +76,39 @@ async function rpcCallWithFailover<T>(
 }
 
 /**
- * Statelessly verifies a Base ERC-20 USDC Transfer receipt + EIP-191 payer signature.
+ * Verifies EOA (EIP-191) AND Smart Contract Wallet (ERC-1271 / EIP-6492) signatures
+ * via viem publicClient.verifyMessage backed by multi-RPC Base failover transport.
+ */
+export async function verifySmartWalletOrEoaSignature(input: {
+  rpcUrls: string[];
+  address: string;
+  message: string;
+  signature: string;
+}): Promise<boolean> {
+  const client = createPublicClient({
+    chain: base,
+    transport: custom({
+      async request({ method, params }) {
+        return rpcCallWithFailover(
+          input.rpcUrls,
+          method,
+          Array.isArray(params) ? params : []
+        );
+      }
+    })
+  });
+
+  return client
+    .verifyMessage({
+      address: input.address as `0x${string}`,
+      message: input.message,
+      signature: input.signature as `0x${string}`
+    })
+    .catch(() => false);
+}
+
+/**
+ * Verifies a Base ERC-20 USDC Transfer receipt + EOA / Smart-Wallet signature.
  * Uses BigInt micro-unit math (6 decimals) to avoid floating-point rounding bugs.
  */
 export async function verifyBaseUsdcTransfer(input: {
@@ -175,11 +208,12 @@ export async function verifyBaseUsdcTransfer(input: {
       };
     }
     if (!input.challengeMessage || !input.signature) continue;
-    const sigOk = await verifyMessage({
-      address: fromAddr as `0x${string}`,
+    const sigOk = await verifySmartWalletOrEoaSignature({
+      rpcUrls: urls,
+      address: fromAddr,
       message: input.challengeMessage,
-      signature: input.signature as `0x${string}`
-    }).catch(() => false);
+      signature: input.signature
+    });
 
     if (sigOk) {
       return {
@@ -196,7 +230,7 @@ export async function verifyBaseUsdcTransfer(input: {
     status: 403,
     error: requireSig ? 'PAYMENT_OR_SIGNATURE_INVALID' : 'PAYMENT_NOT_FOUND',
     message: requireSig
-      ? 'No Base USDC Transfer to the configured receive address met the tier price with a matching EIP-191 payer signature.'
+      ? 'No Base USDC Transfer to the configured receive address met the required amount with a matching EOA or Smart Wallet (ERC-1271/EIP-6492) signature.'
       : 'No Base USDC Transfer to the target merchant address met the required amount.'
   };
 }

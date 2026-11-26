@@ -1,7 +1,7 @@
 {
   "name": "@apexhive-labs/zerofiat-base-checkout-kit",
-  "version": "1.0.0",
-  "description": "Zero-custody Base USDC checkout, Workers KV replay protection, EIP-191 proof, Ed25519 licensing, and Private GitHub Release delivery template for Cloudflare Workers Free.",
+  "version": "2.1.0",
+  "description": "Free MIT Base USDC payment verifier with ERC-1271/EIP-6492 Smart Wallet support, Cloudflare Durable Object atomic anti-replay locks, and Ed25519 attestation certificates.",
   "license": "MIT",
   "type": "module",
   "scripts": {
@@ -17,8 +17,9 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250501.0",
-    "@types/node": "^22.15.0",
+    "@types/node": "^24.0.0",
     "playwright": "1.64.1",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "wrangler": "4.125.0"
   }
 }

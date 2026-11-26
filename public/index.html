@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ZeroFiat Base Checkout Kit (v2.0.0 Open-Core MIT) | ApexHive Labs</title>
+  <title>ZeroFiat Base Checkout Kit (v2.1.0 Free MIT) | ApexHive Labs</title>
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
@@ -11,124 +11,103 @@
     <div class="container nav-row">
       <div class="brand">
         <span class="brand-badge">ApexHive Labs</span>
-        <span class="brand-name">zerofiat-base-checkout-kit <small>v2.0.0 MIT</small></span>
+        <span class="brand-name">zerofiat-base-checkout-kit <small>v2.1.0 MIT</small></span>
       </div>
       <nav class="nav-links">
         <a href="#architecture">Architecture</a>
-        <a href="#pricing">Open-Core Tiers</a>
-        <a href="#quota">Hosted API Quota</a>
-        <a href="#checkout">Team / Sponsor</a>
+        <a href="#capabilities">Capabilities</a>
+        <a href="#quota">Merchant Stats</a>
+        <a href="#checkout">Verification Demo</a>
       </nav>
     </div>
   </header>
 
   <main class="container">
     <section class="hero">
-      <p class="eyebrow">100% MIT OPEN-SOURCE CORE &bull; HOSTED API FREE UP TO $10K GMV &bull; ZERO STRIPE</p>
-      <h1>Verify Base USDC Payments at $0 Until You Earn $10,000.</h1>
+      <p class="eyebrow">100% FREE MIT OPEN SOURCE &bull; ERC-1271 / EIP-6492 SMART WALLETS &bull; DURABLE OBJECT LOCK</p>
+      <h1>Non-Custodial Base USDC Verification Rail for Cloudflare Workers.</h1>
       <p class="subtitle">
-        <strong>100% Public MIT Open-Source</strong> TypeScript checkout for Cloudflare Workers Free + <strong>Workers KV</strong>. Self-host free forever via <code>git clone</code>, or call our zero-signup <strong>Cloud Hosted Verify API FREE for your first $10,000 USDC verified GMV</strong>.
+        <strong>100% Free MIT Open-Source</strong> TypeScript Base USDC verifier supporting EOA (<code>EIP-191</code>) and Smart Contract Wallets (Coinbase Smart Wallet, Safe via <code>ERC-1271</code> / <code>EIP-6492</code>), backed by strongly-consistent <strong>Cloudflare Durable Objects</strong> (<code>TxClaimLockDO</code>) to prevent concurrent replay races.
       </p>
       <div class="code-box">
         <code>git clone https://github.com/apexhive-hq/zerofiat-base-checkout-kit.git &amp;&amp; cd zerofiat-base-checkout-kit &amp;&amp; pnpm install --ignore-scripts &amp;&amp; pnpm test</code>
       </div>
       <div class="hero-actions">
-        <a class="btn btn-primary" href="#quota">Check Free $10K Hosted Quota</a>
-        <a class="btn btn-secondary" href="#checkout">Team Pro (49 USDC) / Sponsor (5 USDC)</a>
+        <a class="btn btn-primary" href="#quota">Check Merchant GMV Stats</a>
+        <a class="btn btn-secondary" href="#checkout">Try Checkout Proof Demo</a>
       </div>
     </section>
 
     <section id="architecture" class="section">
-      <h2>What Ships Inside the MIT Core</h2>
+      <h2>Core Engineering Modules</h2>
       <div class="grid-3">
         <article class="card">
-          <h3>Base USDC + EIP-191 Verifier</h3>
-          <p>Exact <code>BigInt</code> 6-decimal ERC-20 <code>Transfer</code> log verification paired with multi-RPC Base failover (<code>BASE_RPC_URLS</code>) and optional <code>viem.verifyMessage</code> proofs.</p>
+          <h3>EOA + Smart Wallet Verifier</h3>
+          <p>Aggregates <code>BigInt</code> 6-decimal Base USDC <code>Transfer</code> logs across multi-RPC failover (<code>BASE_RPC_URLS</code>) and verifies variable-length <code>ERC-1271</code> / <code>EIP-6492</code> + <code>EIP-191</code> signatures via <code>viem</code>.</p>
         </article>
         <article class="card">
-          <h3>Hosted Verify API ($10K Free)</h3>
-          <p>Point your frontend or backend at <code>POST /api/hosted/verify</code> with your own <code>merchantAddress</code>—anti-replay locked, free until <code>$10,000 USDC</code> cumulative GMV.</p>
+          <h3>Atomic Durable Object Lock</h3>
+          <p><code>TxClaimLockDO</code> serializes concurrent requests per <code>txHash</code> inside a single-threaded SQLite-backed Durable Object, eliminating Workers KV eventual-consistency race conditions.</p>
         </article>
         <article class="card">
-          <h3>Ed25519 + MIT Entitlements</h3>
-          <p>Portable WebCrypto Ed25519 license tokens, HMAC-signed download grants, same-payer re-claim recovery, and full Playwright E2E tests.</p>
+          <h3>Unlimited Free MIT Rail</h3>
+          <p>No paywalls, no quota locks, and no Stripe accounts. Self-host <code>POST /api/hosted/verify</code> or embed <code>/api/challenge</code> + <code>/api/verify</code> with portable Ed25519 certificates.</p>
         </article>
       </div>
     </section>
 
-    <section id="pricing" class="section">
-      <h2>Open-Core Pricing</h2>
+    <section id="capabilities" class="section">
+      <h2>MIT Open-Source Specification</h2>
       <div class="grid-2">
-        <article class="card">
-          <h3>Open-Source Self-Host (MIT)</h3>
-          <p class="price">0 USDC <span>MIT forever</span></p>
+        <article class="card card-featured">
+          <h3>Self-Hosted Cloudflare Worker (MIT)</h3>
+          <p class="price">0 USDC <span>100% Free MIT</span></p>
           <ul class="feat-list">
             <li>Full TypeScript source (<code>src/</code> + <code>public/</code> + <code>tests/</code>)</li>
-            <li>Deploy free on Cloudflare Workers Free + Workers KV</li>
-            <li>Unlimited GMV on your own Worker deployment</li>
-            <li>Self-host any MIT release without license keys</li>
+            <li>Runs on Cloudflare Workers Free (SQLite-backed Durable Objects + KV)</li>
+            <li>Unlimited verified Base USDC GMV with zero usage caps</li>
+            <li>Zero spend-key custody: read-only RPC + public receive address</li>
           </ul>
         </article>
-        <article class="card card-featured">
-          <h3>Cloud Hosted Verify API</h3>
-          <p class="price">0 USDC <span>up to $10,000 GMV</span></p>
+        <article class="card">
+          <h3>Stateless Verification Endpoints</h3>
+          <p class="price">Open API <span>EOA + Smart Wallets</span></p>
           <ul class="feat-list">
-            <li>Zero signup—just pass your Base <code>merchantAddress</code></li>
             <li><code>POST /api/hosted/verify</code> &amp; <code>GET /api/hosted/quota/:addr</code></li>
-            <li>Idempotent replay cache (zero double-counted GMV)</li>
-            <li>Multi-RPC failover + instant settlement to your wallet</li>
-          </ul>
-        </article>
-        <article class="card">
-          <h3>Sponsor / Supporter</h3>
-          <p class="price">5 USDC <span>optional</span></p>
-          <ul class="feat-list">
-            <li>Voluntary backing for MIT open-source maintenance</li>
-            <li>1-click Base USDC wallet checkout below</li>
-            <li>Signed Ed25519 supporter token + MIT certificate</li>
+            <li><code>POST /api/challenge</code> &amp; <code>POST /api/verify</code> (Ed25519 receipts)</li>
+            <li>32 KiB bounded JSON parser &amp; strict hex <code>BigInt</code> confirmation guards</li>
             <li>Support contact: <code>apexhive.hq@proton.me</code></li>
-          </ul>
-        </article>
-        <article class="card">
-          <h3>Team / Hosted Pro</h3>
-          <p class="price">49 USDC <span>lifetime</span></p>
-          <ul class="feat-list">
-            <li>Unlimited Cloud Hosted API GMV beyond <code>$10,000</code></li>
-            <li>Pass signed token via <code>X-ApexHive-License</code> header</li>
-            <li>5-seat commercial agency license &amp; priority support</li>
-            <li>Same-wallet re-claim recovery if browser tab closes</li>
           </ul>
         </article>
       </div>
     </section>
 
     <section id="quota" class="section">
-      <h2>Live Cloud Hosted API Quota Checker</h2>
+      <h2>Merchant Verified GMV Lookup</h2>
       <div class="card">
-        <p class="muted">Inspect cumulative verified Base USDC GMV and remaining free <code>$10,000 USDC</code> Hosted API quota for any EVM <code>merchantAddress</code> (0 KV writes).</p>
+        <p class="muted">Inspect cumulative Base USDC GMV verified for any EVM <code>merchantAddress</code> (unlimited free MIT rail, 0 KV writes).</p>
         <div class="copy-row">
           <input id="quota-address-input" type="text" placeholder="0xYourMerchantAddress" autocomplete="off" />
-          <button type="button" id="check-quota-btn" class="btn btn-secondary">Check Quota</button>
+          <button type="button" id="check-quota-btn" class="btn btn-secondary">Check GMV Stats</button>
         </div>
         <div id="quota-result" class="success-box" hidden></div>
       </div>
     </section>
 
     <section id="checkout" class="section">
-      <h2>Team / Sponsor Base USDC Checkout</h2>
+      <h2>Base USDC + Smart Wallet Verification Demo</h2>
 
       <div id="self-custody-warning" class="warning-banner" role="alert">
-        <strong>SELF-CUSTODY WALLET ONLY:</strong> Send Base USDC <strong>ONLY</strong> from a self-custody wallet you control (MetaMask, Rabby, Coinbase Wallet). <strong>NEVER send directly from a centralized exchange (CEX) withdrawal</strong>—exchange hot wallets cannot sign the EIP-191 ownership challenge required below. Same-wallet re-claims stay enabled; for manual support contact <a href="mailto:apexhive.hq@proton.me">apexhive.hq@proton.me</a>.
+        <strong>SELF-CUSTODY OR SMART WALLET ONLY:</strong> Send Base USDC from an EOA (MetaMask, Rabby) or Base Smart Wallet (Coinbase Smart Wallet, Safe — <code>ERC-1271</code> / <code>EIP-6492</code> supported). <strong>NEVER send directly from a centralized exchange (CEX) withdrawal</strong>—exchange hot wallets cannot sign ownership challenges. Contact: <a href="mailto:apexhive.hq@proton.me">apexhive.hq@proton.me</a>.
       </div>
 
       <div class="checkout-grid">
         <div class="card">
           <h3>Step 1: Send Base USDC</h3>
           <div class="field-group">
-            <label for="tier-select">Checkout Tier</label>
+            <label for="tier-select">Attestation Profile</label>
             <select id="tier-select">
-              <option value="supporter">Sponsor / Supporter — 5 USDC (Optional)</option>
-              <option value="team">Team / Hosted Pro — 49 USDC (Unlimited Hosted API + 5 Seats)</option>
+              <option value="standard">Standard Verification Attestation — 1 USDC Demo</option>
             </select>
           </div>
           <div class="field-group">
@@ -141,22 +120,13 @@
           </div>
 
           <div class="field-group">
-            <button type="button" id="wallet-pay-btn" class="btn btn-primary btn-full" hidden>Pay 5 USDC with Wallet</button>
+            <button type="button" id="wallet-pay-btn" class="btn btn-primary btn-full" hidden>Pay 1 USDC with Wallet</button>
             <small id="wallet-pay-status" class="muted" role="status"></small>
           </div>
-
-          <details class="optional-rails">
-            <summary>Optional Reference Rails (Solana / BTC / TRON — Manual Fulfillment via apexhive.hq@proton.me)</summary>
-            <ul>
-              <li>Solana USDC: <code id="sol-address">4UyTxvrcqtYEsm5LQuiD5ofEJ4bMk6XJqv6G4St3GC9F</code></li>
-              <li>Bitcoin SegWit: <code id="btc-address">bc1q2j0yqtn2cyslurxvx050vpgnamdqhxtegfs789</code></li>
-              <li>TRON TRC-20: <code id="tron-address">TFVqcqQuGKsjwb6tFnhLyL3UudPdA6VnnN</code></li>
-            </ul>
-          </details>
         </div>
 
         <div class="card">
-          <h3>Step 2: Prove Wallet &amp; Claim License</h3>
+          <h3>Step 2: Prove Wallet &amp; Issue Receipt</h3>
           <form id="verify-form" novalidate>
             <div class="field-group">
               <label for="tx-hash-input">Base Transaction Hash (<code>txHash</code>)</label>
@@ -165,7 +135,7 @@
 
             <div class="btn-row">
               <button type="button" id="challenge-btn" class="btn btn-secondary">
-                1. Generate EIP-191 Challenge
+                1. Generate Ownership Challenge
               </button>
               <button type="button" id="wallet-sign-btn" class="btn btn-small" hidden>
                 Sign via Wallet
@@ -179,24 +149,24 @@
             </div>
 
             <div class="field-group">
-              <label for="signature-input">EIP-191 Signature (<code>personal_sign</code>)</label>
+              <label for="signature-input">EOA or Smart Wallet Signature (<code>EIP-191 / ERC-1271 / EIP-6492</code>)</label>
               <input id="signature-input" type="text" placeholder="0x..." autocomplete="off" />
             </div>
 
             <button type="submit" id="verify-btn" class="btn btn-primary btn-full">
-              2. Verify USDC &amp; Issue License
+              2. Verify USDC &amp; Issue Certificate
             </button>
           </form>
 
           <div id="status-error" class="error-box" hidden></div>
 
           <div id="license-result" class="success-box" hidden>
-            <h4>Verified! License &amp; Archive Unlocked</h4>
+            <h4>Verified! MIT Attestation Certificate Issued</h4>
             <p>
               <a id="download-link" class="btn btn-primary" href="#" download>Download Archive / Certificate</a>
             </p>
             <details>
-              <summary>Signed Ed25519 License Token</summary>
+              <summary>Signed Ed25519 Receipt Token</summary>
               <code id="raw-token" class="token-break"></code>
             </details>
           </div>
@@ -208,7 +178,7 @@
   <footer class="site-footer">
     <div class="container footer-row">
       <span>&copy; 2026 ApexHive Labs &bull; MIT Open Source &bull; Support: <a href="mailto:apexhive.hq@proton.me">apexhive.hq@proton.me</a></span>
-      <span>Zero Stripe &bull; Free Until $10K Hosted GMV &bull; Workers KV</span>
+      <span>Zero Custody &bull; Durable Object Atomic Lock &bull; ERC-1271 / EIP-6492</span>
     </div>
   </footer>
 

@@ -384,7 +384,7 @@ app.get('/api/config', (c) => {
   });
 });
 
-// ─── Free MIT Base USDC Verification Rail (Unlimited GMV, Atomic DO Lock) ────
+// ─── Base USDC Verification Rail (MIT, Atomic DO Lock) ─────────────────────────
 
 app.get('/api/hosted/quota/:merchantAddress', async (c) => {
   if (!c.env.TX_CLAIM_LOCK) {

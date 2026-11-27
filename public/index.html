@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ZeroFiat Base Checkout Kit (v2.1.0 Free MIT) | ApexHive Labs</title>
+  <title>ZeroFiat Base Checkout Kit (v2.1.0) | ApexHive Labs</title>
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
@@ -11,7 +11,7 @@
     <div class="container nav-row">
       <div class="brand">
         <span class="brand-badge">ApexHive Labs</span>
-        <span class="brand-name">zerofiat-base-checkout-kit <small>v2.1.0 MIT</small></span>
+        <span class="brand-name">zerofiat-base-checkout-kit <small>v2.1.0</small></span>
       </div>
       <nav class="nav-links">
         <a href="#architecture">Architecture</a>
@@ -24,10 +24,10 @@
 
   <main class="container">
     <section class="hero">
-      <p class="eyebrow">100% FREE MIT OPEN SOURCE &bull; ERC-1271 / EIP-6492 SMART WALLETS &bull; DURABLE OBJECT LOCK</p>
+      <p class="eyebrow">BASE MAINNET USDC &bull; EOA + ERC-1271 / EIP-6492 SMART WALLETS &bull; DURABLE OBJECT ANTI-REPLAY</p>
       <h1>Non-Custodial Base USDC Verification Rail for Cloudflare Workers.</h1>
       <p class="subtitle">
-        <strong>100% Free MIT Open-Source</strong> TypeScript Base USDC verifier supporting EOA (<code>EIP-191</code>) and Smart Contract Wallets (Coinbase Smart Wallet, Safe via <code>ERC-1271</code> / <code>EIP-6492</code>), backed by strongly-consistent <strong>Cloudflare Durable Objects</strong> (<code>TxClaimLockDO</code>) to prevent concurrent replay races.
+        Non-custodial Base USDC payment verification with EOA (<code>EIP-191</code>) and Smart Contract Wallet (Coinbase Smart Wallet, Safe via <code>ERC-1271</code> / <code>EIP-6492</code>) signature proofs, atomic <strong>Cloudflare Durable Object</strong> anti-replay locks (<code>TxClaimLockDO</code>), and offline Ed25519 receipt certificates.
       </p>
       <div class="code-box">
         <code>git clone https://github.com/apexhive-hq/zerofiat-base-checkout-kit.git &amp;&amp; cd zerofiat-base-checkout-kit &amp;&amp; pnpm install --ignore-scripts &amp;&amp; pnpm test</code>
@@ -47,30 +47,30 @@
         </article>
         <article class="card">
           <h3>Atomic Durable Object Lock</h3>
-          <p><code>TxClaimLockDO</code> serializes concurrent requests per <code>txHash</code> inside a single-threaded SQLite-backed Durable Object, eliminating Workers KV eventual-consistency race conditions.</p>
+          <p><code>TxClaimLockDO</code> serializes concurrent requests per scoped claim key inside a single-threaded SQLite-backed Durable Object, preventing concurrent replay races.</p>
         </article>
         <article class="card">
-          <h3>Unlimited Free MIT Rail</h3>
-          <p>No paywalls, no quota locks, and no Stripe accounts. Self-host <code>POST /api/hosted/verify</code> or embed <code>/api/challenge</code> + <code>/api/verify</code> with portable Ed25519 certificates.</p>
+          <h3>Ed25519 Receipt Certificates</h3>
+          <p>Issue portable WebCrypto Ed25519 attestation tokens via <code>/api/challenge</code> + <code>/api/verify</code> for offline verification, or run server-to-server checks via <code>POST /api/hosted/verify</code>.</p>
         </article>
       </div>
     </section>
 
     <section id="capabilities" class="section">
-      <h2>MIT Open-Source Specification</h2>
+      <h2>Self-Hosted Worker Specification</h2>
       <div class="grid-2">
         <article class="card card-featured">
-          <h3>Self-Hosted Cloudflare Worker (MIT)</h3>
-          <p class="price">0 USDC <span>100% Free MIT</span></p>
+          <h3>Cloudflare Worker Deployment</h3>
+          <p class="price">MIT <span>Self-Hosted Source</span></p>
           <ul class="feat-list">
             <li>Full TypeScript source (<code>src/</code> + <code>public/</code> + <code>tests/</code>)</li>
             <li>Runs on Cloudflare Workers Free (SQLite-backed Durable Objects)</li>
-            <li>Unlimited verified Base USDC GMV with zero usage caps</li>
+            <li>Direct Base USDC settlement to your configured receive address</li>
             <li>Zero spend-key custody: read-only RPC + public receive address</li>
           </ul>
         </article>
         <article class="card">
-          <h3>Stateless Verification Endpoints</h3>
+          <h3>Verification &amp; Receipt API</h3>
           <p class="price">Open API <span>EOA + Smart Wallets</span></p>
           <ul class="feat-list">
             <li><code>POST /api/hosted/verify</code> &amp; <code>GET /api/hosted/quota/:addr</code></li>
@@ -85,7 +85,7 @@
     <section id="quota" class="section">
       <h2>Merchant Verified GMV Lookup</h2>
       <div class="card">
-        <p class="muted">Inspect cumulative Base USDC GMV verified for any EVM <code>merchantAddress</code> (unlimited free MIT rail, 0 KV writes).</p>
+        <p class="muted">Inspect cumulative Base USDC GMV verified for any EVM <code>merchantAddress</code> from atomic Durable Object state.</p>
         <div class="copy-row">
           <input id="quota-address-input" type="text" placeholder="0xYourMerchantAddress" autocomplete="off" />
           <button type="button" id="check-quota-btn" class="btn btn-secondary">Check GMV Stats</button>

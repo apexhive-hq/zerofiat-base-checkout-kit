@@ -1,6 +1,6 @@
 # `zerofiat-base-checkout-kit` (`v2.1.0`) — ApexHive Labs
 
-> **100% Free MIT non-custodial Base USDC payment verifier with EOA + Smart Wallet (`ERC-1271` / `EIP-6492`) signature verification, Cloudflare Durable Object atomic anti-replay locks (`TxClaimLockDO`), and portable Ed25519 attestation certificates.**
+> **Non-custodial Base USDC payment verification with EOA + Smart Wallet (`ERC-1271` / `EIP-6492`) signature proofs, Cloudflare Durable Object atomic anti-replay locks (`TxClaimLockDO`), and portable Ed25519 receipt certificates.**
 
 ---
 
@@ -28,9 +28,9 @@
 
 ---
 
-## Verification Endpoints (100% Free MIT Rail)
+## Verification Endpoints
 
-Verify Base Mainnet USDC (`0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`) transfers directly to **your** `merchantAddress` with atomic single-use anti-replay protection (`409 TX_ALREADY_CLAIMED` on replays by default) and unlimited GMV:
+Verify Base Mainnet USDC (`0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`) transfers directly to **your** `merchantAddress` with atomic single-use anti-replay locks (`409 TX_ALREADY_CLAIMED` on replays by default) and per-merchant GMV tracking:
 
 ```bash
 # 1. Check cumulative verified GMV for a merchantAddress (atomic DO read)
@@ -104,4 +104,4 @@ wrangler deploy
 
 ## License
 
-MIT Open Source (`$0`). Support contact: `apexhive.hq@proton.me`.
+MIT License. Support contact: `apexhive.hq@proton.me`.

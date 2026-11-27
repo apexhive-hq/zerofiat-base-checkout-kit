@@ -109,7 +109,7 @@
           return;
         }
         quotaResult.textContent =
-          `Verified GMV: ${formatAtomicUsdc(data.gmvAtomic)} | Rail Mode: Unlimited Free MIT`;
+          `Verified GMV: ${formatAtomicUsdc(data.gmvAtomic)} | Mode: Non-Custodial Base USDC`;
         quotaResult.hidden = false;
       } catch (err) {
         quotaResult.textContent = 'Network error checking stats: ' + (err.message || String(err));

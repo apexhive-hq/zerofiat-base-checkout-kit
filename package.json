@@ -1,7 +1,7 @@
 {
   "name": "@apexhive-labs/zerofiat-base-checkout-kit",
   "version": "2.1.0",
-  "description": "Free MIT Base USDC payment verifier with ERC-1271/EIP-6492 Smart Wallet support, Cloudflare Durable Object atomic anti-replay locks, and Ed25519 attestation certificates.",
+  "description": "Non-custodial Base USDC payment verifier with EOA + ERC-1271/EIP-6492 Smart Wallet signature proofs, Cloudflare Durable Object anti-replay locks, and offline Ed25519 receipt certificates.",
   "license": "MIT",
   "type": "module",
   "engines": {
